@@ -171,17 +171,18 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
 .recap{border-radius:24px;padding:1.4rem;background:linear-gradient(145deg,var(--v1),var(--v2));border:1px solid var(--line);text-align:center}
 .recap .n{font-size:2.4rem;font-weight:700;letter-spacing:-.03em;line-height:1.1}.recap .l{color:var(--dim);font-size:.8rem;margin-bottom:.8rem}
 .recap .g{display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem;margin-top:.8rem}
+#menubtn{display:none}.menugrid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}.menugrid button{width:100%;min-height:48px;font-size:.9rem;white-space:normal}.menugrid button.hidden{display:none}
 /* End party: red Apple-style glass */
 #endparty{background:linear-gradient(180deg,rgba(255,69,58,.34),rgba(255,69,58,.16));color:#ff8a80;border:1px solid rgba(255,105,97,.5);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 6px 20px rgba(255,69,58,.18)}
 #endparty:hover{background:linear-gradient(180deg,rgba(255,69,58,.5),rgba(255,69,58,.26));color:#fff}
 /* Phone: compact header and player controls */
 @media(max-width:860px){
  header{gap:.35rem;padding:.5rem .55rem}
- header .sp{display:none}
+ header .sp{flex:1 1 0}
  header b{flex:1 1 100%;font-size:1rem;padding:0 .3rem}
  header .code{padding:.3rem .75rem;font-size:.85rem}
  header button{min-height:36px;padding:.35rem .8rem;font-size:.8rem}
- #endparty{margin-left:auto}
+ #menubtn{display:inline-grid;place-items:center;width:44px;padding:0}#menubtn svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round}
  .row{flex-wrap:nowrap}
  .time{white-space:nowrap;padding:0 .3rem;font-size:.78rem}
  .ib{width:34px;height:36px;flex:0 0 auto}.ib svg{width:20px;height:20px}
@@ -225,6 +226,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
     <button class="ghost hidden" id="readylaunch">Start with countdown</button>
     <button class="ghost" id="resync">Resync</button>
     <button class="ghost hidden" id="endparty">End party</button>
+    <button class="ghost" id="menubtn" aria-label="Menu" aria-haspopup="dialog"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   </header>
   <main>
     <div class="stage" id="stage">
@@ -300,6 +302,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
  <h3>Queue</h3><div id="qlist"></div>
 </div></div>
 <div id="readymodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ready check"><div class="panel glass"><h2>Ready to watch?</h2><p class="hint" id="readystatus">Waiting for everyone…</p><div class="panel-row"><button id="imready">Ready</button><button id="begincount" class="hidden">Start anyway</button></div></div></div>
+<div id="menumodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Menu"><div class="panel glass"><div class="panel-row"><h2>Menu</h2><button class="ghost" id="closemenu">Close</button></div><div class="menugrid" id="menuitems"></div></div></div>
 <div id="notemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Timestamp notes"><div class="panel glass">
  <div class="panel-row"><h2>Notes</h2><button class="ghost" id="closenote">Close</button></div>
  <p class="hint" id="noteat"></p><input id="notein" type="text" maxlength="140" placeholder="e.g. Watch this part closely" autocomplete="off"><div class="panel-row"><button id="noteadd">Pin note here</button></div>
@@ -1013,6 +1016,18 @@ $('rcimg').onclick = () => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' })); a.download = 'movie-night.ics'; a.click();
   };
 })();
+
+// ---- phone menu: header options move into a glass popup on small screens ----
+const mq = matchMedia('(max-width:860px)');
+function placeMenu() {
+  const box = $('menuitems'), hdr = document.querySelector('header'), sp = hdr.querySelector('.sp'), end = $('endparty');
+  if (mq.matches) ['copy', 'brbbtn', 'recapbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => box.append($(id)));
+  else { hdr.insertBefore($('copy'), sp); ['brbbtn', 'recapbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => hdr.insertBefore($(id), end)); $('menumodal').classList.add('hidden'); }
+}
+placeMenu(); mq.addEventListener ? mq.addEventListener('change', placeMenu) : mq.addListener(placeMenu);
+$('menubtn').onclick = () => $('menumodal').classList.remove('hidden');
+$('closemenu').onclick = () => $('menumodal').classList.add('hidden');
+$('menumodal').onclick = (e) => { if (e.target === $('menumodal') || e.target.closest('#menuitems button')) setTimeout(() => $('menumodal').classList.add('hidden'), 0); };
 document.addEventListener('visibilitychange', () => { if (document.hidden) return; clearUnread(); if (joined && socket.connected) socket.emit('resync'); });
 </script>
 </body>
