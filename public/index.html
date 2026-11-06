@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Watch Party</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--v1:#1c2a4a;--v2:#2a1640;--bg:#000;--glass:rgba(34,34,38,.62);--glass2:rgba(255,255,255,.07);--line:rgba(255,255,255,.12);--text:#f5f5f7;--dim:#98989f;--blue:#0a84ff;--green:#30d158}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{overflow-x:hidden}
+*{-webkit-tap-highlight-color:transparent}
+body{background:radial-gradient(1200px 700px at 50% -10%,var(--v1) 0,transparent 60%),radial-gradient(900px 600px at 100% 100%,var(--v2) 0,transparent 55%),#000;background-attachment:fixed;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",system-ui,sans-serif;line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+.glass{background:var(--glass);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border:1px solid var(--line);box-shadow:0 20px 60px rgba(0,0,0,.45)}
+button{background:var(--blue);color:#fff;border:0;border-radius:999px;padding:.62rem 1.2rem;font-weight:600;cursor:pointer;transition:transform .15s,background .15s}
+button:hover{background:color-mix(in srgb,var(--blue) 82%,#fff)}button:active{transform:scale(.97)}
+button.ghost{background:var(--glass2);color:var(--text)}button.ghost:hover{background:rgba(255,255,255,.14)}
+input[type=text],input[type=datetime-local],select{background:var(--glass2);border:1px solid transparent;border-radius:999px;padding:.65rem 1.1rem;width:100%;outline:0;transition:border .15s,background .15s}
+input[type=datetime-local],select{color-scheme:dark}select{width:auto;padding:.3rem .8rem;border-radius:999px}
+input[type=text]::placeholder{color:var(--dim)}
+input[type=text]:focus,input[type=datetime-local]:focus{border-color:var(--blue);background:rgba(255,255,255,.1)}
+button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+input:focus-visible,.seek:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+button:disabled{opacity:.42;cursor:not-allowed;transform:none}
+.hidden{display:none!important}
+#code:not(:placeholder-shown){text-transform:uppercase;letter-spacing:.06em}
+.hint{color:var(--dim);font-size:.82rem;margin:.35rem 0}.pill{display:inline-flex;border:1px solid var(--line);background:var(--glass2);padding:.1rem .5rem;border-radius:999px;font-size:.72rem;color:#d5e7ff;margin-left:.35rem}
+.host-actions{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}.host-actions button{font-size:.83rem;padding:.5rem .85rem}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:12;display:grid;place-items:center;padding:16px;padding-bottom:max(16px,env(safe-area-inset-bottom))}
+.panel{width:min(480px,100%);max-height:90dvh;overflow:auto;border-radius:28px;padding:1.3rem}.panel h2{margin:0 0 1rem;font-size:1.3rem}.panel h3{margin:1.3rem 0 .5rem;font-size:1rem}.panel input{margin:.4rem 0}.panel-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;margin:.6rem 0}.panel-row button{padding:.45rem .8rem;font-size:.82rem}.segments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.3rem;background:var(--glass2);padding:.25rem;border-radius:18px}.segments button{padding:.6rem .25rem;background:transparent;font-size:.8rem}.segments button.active{background:var(--blue)}.segments.v{grid-template-columns:repeat(2,minmax(0,1fr))}
+#countnumber{position:absolute;z-index:8;inset:0;display:grid;place-items:center;pointer-events:none;font-size:clamp(100px,20vw,190px);font-weight:700;color:white;text-shadow:0 12px 60px #000;animation:countpop .9s ease-out both}#countnumber span{background:rgba(40,40,46,.48);backdrop-filter:blur(25px);border:1px solid var(--line);border-radius:36px;min-width:1.5em;text-align:center}@keyframes countpop{from{opacity:.2;transform:scale(1.12)}to{opacity:1;transform:scale(1)}}
+
+#conn{position:fixed;top:max(.8rem,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:13;padding:.5rem 1rem;border-radius:999px;font-size:.88rem;font-weight:500;max-width:92vw;white-space:nowrap}
+#conn i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;margin-right:.5rem;vertical-align:-1px;animation:sp .8s linear infinite}
+#waitpill{position:absolute;z-index:7;left:50%;top:58px;transform:translateX(-50%);max-width:calc(100% - 36px);padding:.35rem .95rem;border-radius:999px;background:rgba(28,28,32,.55);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.14);font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+#reactions{position:absolute;inset:0;z-index:7;overflow:hidden;pointer-events:none}
+.rx{position:absolute;right:var(--x,20px);bottom:84px;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:rgba(28,28,32,.55);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.16);animation:rxup 2.2s ease-out forwards}
+@keyframes rxup{0%{opacity:0;transform:translate(0,0) scale(.6)}12%{opacity:1;transform:translate(0,-10px) scale(1)}100%{opacity:0;transform:translate(var(--dx,0),-150px) scale(1.05)}}
+.rx svg,.rb svg{width:22px;height:22px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#typing{min-height:1.4em;padding:.1rem 1.2rem 0;font-size:.78rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#reactbar{display:flex;gap:.3rem;padding:.35rem .8rem .5rem;border-top:1px solid var(--line)}
+#reactbar+#chatform{border-top:0;padding-top:0}
+.rb{flex:1;padding:0;height:34px;background:var(--glass2)}.rb:hover{background:rgba(255,255,255,.14)}
+#unread{position:fixed;z-index:9;right:max(14px,env(safe-area-inset-right));bottom:calc(max(1.4rem,env(safe-area-inset-bottom)) + 3.6rem);padding:.5rem 1rem;font-size:.85rem;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+#queuebtn{white-space:nowrap}
+.qlabel{flex:1 1 140px;min-width:0;overflow-wrap:anywhere;font-size:.92rem}.qby{color:var(--dim);font-size:.78rem}
+header{min-width:0}
+header button{white-space:nowrap}
+header b.named{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+#home{min-height:100%;display:grid;place-items:center;padding:1.5rem}
+.card{width:min(440px,100%);padding:2.2rem;border-radius:32px}
+h1{font-size:clamp(2.6rem,9vw,3.6rem);line-height:1.02;margin:0 0 .7rem;font-weight:700;letter-spacing:-.04em;background:linear-gradient(180deg,#fff,#a7b4d0);-webkit-background-clip:text;background-clip:text;color:transparent}
+.card p{color:var(--dim);margin:0 0 1.6rem;font-size:1.02rem}
+.card label{display:block;margin:1rem 0 .4rem;color:var(--dim);font-size:.85rem;padding-left:.4rem}
+.card .actions{margin-top:1.6rem;display:flex;gap:.6rem;flex-wrap:wrap}
+.card .actions button{flex:1 1 140px;white-space:nowrap}
+
+#room{height:100%;display:grid;grid-template-columns:1fr 350px;grid-template-rows:auto 1fr;gap:14px;padding:14px}
+header{grid-column:1/-1;display:flex;align-items:center;gap:.7rem;padding:.6rem .8rem .6rem 1.2rem;border-radius:999px}
+header b{font-size:1.05rem;font-weight:600;letter-spacing:-.02em}
+.code{background:var(--glass2);padding:.3rem .9rem;border-radius:999px;font-weight:600;letter-spacing:.06em}
+header .sp{flex:1}
+main{display:flex;flex-direction:column;gap:14px;min-height:0}
+.stage{flex:1;min-height:220px;background:#000;border-radius:26px;overflow:hidden;position:relative;border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.stage>video,.stage>iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;object-fit:contain}
+.stage:fullscreen{border-radius:0;border:0}
+.stage:-webkit-full-screen{border-radius:0;border:0}
+.stage>.yt{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);overflow:hidden;background:#000}
+.yt iframe{position:absolute;left:0;top:-64px;width:100%;height:calc(100% + 128px);border:0}
+.empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:var(--dim);padding:1.5rem}
+.empty strong{display:block;color:var(--text);font-size:1.4rem;letter-spacing:-.02em;margin-bottom:.3rem}
+.ui{position:absolute;inset:0;pointer-events:none;color:#fff;--g:rgba(28,28,32,.55)}
+.ui>*{pointer-events:auto}
+.shield{position:absolute;inset:0}
+.vtitle{position:absolute;left:18px;top:16px;max-width:60%;padding:.35rem .95rem;border-radius:999px;background:var(--g);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .3s;pointer-events:none}
+.vtitle:empty{display:none}
+.bigplay{position:absolute;left:50%;top:50%;width:84px;height:84px;margin:-42px;border-radius:50%;padding:0;background:var(--g);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);border:1px solid rgba(255,255,255,.16);display:grid;place-items:center;transition:opacity .25s,transform .25s}
+.bigplay:hover{background:rgba(60,60,68,.6)}
+.bigplay svg{width:34px;height:34px;margin-left:4px}
+.ui.playing .bigplay{opacity:0;transform:scale(1.35);pointer-events:none}
+.spin{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;border-radius:50%;border:3px solid rgba(255,255,255,.22);border-top-color:#fff;animation:sp .8s linear infinite;opacity:0;pointer-events:none;transition:opacity .2s}
+.ui.buffering .spin{opacity:1}
+@keyframes sp{to{transform:rotate(360deg)}}
+.ctrl{position:absolute;left:16px;right:16px;bottom:16px;padding:.65rem 1rem .5rem;border-radius:22px;background:var(--g);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border:1px solid rgba(255,255,255,.14);transition:opacity .3s,transform .3s}
+.ui.idle{cursor:none}
+.ui.idle .ctrl{opacity:0;transform:translateY(10px);pointer-events:none}
+.ui.idle .vtitle{opacity:0}
+.seek{position:relative;height:18px;cursor:pointer;touch-action:none}
+.seek::before,.seek .buf,.seek .fill{content:"";position:absolute;left:0;top:7px;height:4px;border-radius:4px;transition:height .12s,top .12s}
+.seek::before{right:0;background:rgba(255,255,255,.22)}
+.seek .buf{width:0;background:rgba(255,255,255,.3)}
+.seek .fill{width:0;background:#fff}
+.seek:hover::before,.seek:hover .buf,.seek:hover .fill,.seek.drag::before,.seek.drag .buf,.seek.drag .fill{top:6px;height:6px}
+.knob{position:absolute;top:2px;left:0;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.5);transform:scale(0);transition:transform .12s}
+.seek:hover .knob,.seek.drag .knob{transform:scale(1)}
+.tip{position:absolute;bottom:26px;transform:translateX(-50%);background:rgba(0,0,0,.72);padding:.1rem .55rem;border-radius:8px;font-size:.78rem;font-variant-numeric:tabular-nums;opacity:0;pointer-events:none}
+.seek:hover .tip{opacity:1}
+.row{display:flex;align-items:center;gap:.15rem}
+.row .sp{flex:1}
+.ib{background:none;color:#fff;padding:0;border-radius:12px;display:grid;place-items:center;width:38px;height:36px}
+.ib:hover{background:rgba(255,255,255,.15)}
+.ib svg,.bigplay svg{fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ib svg{width:22px;height:22px}
+.ib.txt{width:auto;padding:0 .7rem;font-weight:600;font-size:.85rem}
+.time{font-variant-numeric:tabular-nums;font-size:.85rem;padding:0 .7rem;color:#e8e8ed}
+#vol{-webkit-appearance:none;appearance:none;width:80px;height:4px;border-radius:4px;background:linear-gradient(90deg,#fff var(--v,100%),rgba(255,255,255,.25) var(--v,100%));outline:0;margin:0 .5rem;cursor:pointer;border:0;padding:0}
+#vol::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.5)}
+#vol::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:#fff}
+@media(max-width:640px){#vol,#bback,#bfwd{display:none}.ctrl{left:8px;right:8px;bottom:8px}}
+
+.src{display:flex;gap:.6rem;padding:.55rem;border-radius:999px;align-items:center}
+.src input[type=text]{background:transparent}
+#prog{height:4px;border-radius:4px;background:var(--glass2);overflow:hidden;display:none}
+#prog i{display:block;height:100%;width:0;background:var(--blue)}
+aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#users{padding:1rem 1.2rem;border-bottom:1px solid var(--line);color:var(--dim);font-size:.88rem}
+#users b{color:var(--green);font-weight:600}
+#msgs{flex:1;overflow:auto;padding:1rem 1.2rem;display:flex;flex-direction:column;gap:.55rem}
+.m{background:var(--glass2);padding:.5rem .8rem;border-radius:16px;align-self:flex-start;max-width:92%;word-break:break-word}
+.m b{color:#64b5ff;font-weight:600}
+.m.sys{background:none;padding:0;color:var(--dim);font-size:.82rem;align-self:center;text-align:center}
+#chatform{display:flex;gap:.5rem;padding:.8rem;border-top:1px solid var(--line)}
+#toast{position:fixed;left:50%;bottom:max(1.4rem,env(safe-area-inset-bottom));transform:translateX(-50%);padding:.7rem 1.2rem;border-radius:999px;font-weight:500;z-index:9;max-width:92vw;text-align:center}
+@media(max-width:860px){
+ #home{padding:max(1rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) max(1rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left))}
+ .card{padding:1.6rem;border-radius:26px}
+ #room{grid-template-columns:1fr;grid-template-rows:auto auto auto;height:auto;min-height:100vh;min-height:100dvh;gap:10px;padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+ header{border-radius:22px;flex-wrap:wrap;padding:.5rem .6rem .5rem 1rem;gap:.5rem}
+ header button{padding:.5rem .9rem;font-size:.9rem}
+ main{gap:10px}
+ .stage{aspect-ratio:16/9;flex:none;min-height:0;border-radius:18px}
+ .src{flex-wrap:wrap;border-radius:22px;padding:.5rem}
+ .src input[type=text]{flex:1 1 100%;min-width:0}
+ .src button{flex:1}
+ aside{height:min(46dvh,440px);min-height:300px;border-radius:22px}
+ #msgs{min-height:0}
+ .vtitle{max-width:calc(100% - 36px)}
+}
+@media(max-width:860px) and (orientation:landscape) and (max-height:520px){
+ .stage{aspect-ratio:auto;height:78dvh}
+ aside{height:60dvh}
+}
+@media(max-width:480px){header b:not(.named){display:none}}
+@media(max-width:640px){.overlay{align-items:end;padding:0}.panel{width:100%;max-height:88dvh;border-radius:28px 28px 0 0;padding:1.2rem;padding-bottom:max(1.2rem,env(safe-area-inset-bottom))}header .sp{flex-basis:0}header button{flex:0 1 auto}#room{min-width:0}main,aside{min-width:0}.host-actions button{min-height:44px}}
+@media(max-width:640px){.bigplay{width:68px;height:68px;margin:-34px}.bigplay svg{width:28px;height:28px}.ctrl{padding:.5rem .6rem .35rem}.time{padding:0 .4rem}}
+@media(pointer:coarse){
+ button{min-height:44px}
+ .ib{width:44px;height:44px}.ib.txt{width:auto}
+ .seek{height:30px}
+ .seek::before,.seek .buf,.seek .fill,.seek:hover::before,.seek:hover .buf,.seek:hover .fill,.seek.drag::before,.seek.drag .buf,.seek.drag .fill{top:12px;height:6px}
+ .knob{top:6px;width:18px;height:18px;margin-left:-9px;transform:scale(1)}
+ .tip{bottom:36px}.seek.drag .tip{opacity:1}
+}
+.stage{transition:box-shadow .6s ease}
+#chips{position:absolute;z-index:7;left:50%;top:96px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:.35rem;max-width:calc(100% - 36px);pointer-events:none}
+.chip{padding:.35rem .95rem;border-radius:999px;background:rgba(28,28,32,.6);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.14);font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;font-variant-numeric:tabular-nums}
+.chip b{color:var(--blue)}
+#notepop{position:absolute;z-index:8;left:18px;bottom:112px;max-width:min(360px,calc(100% - 36px));padding:.55rem .9rem;border-radius:18px;background:rgba(28,28,32,.7);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.16);font-size:.9rem;pointer-events:none;overflow-wrap:anywhere}
+#notepop small{display:block;color:var(--dim);font-size:.74rem}
+.dots,.marks{position:absolute;left:0;right:0;top:0;height:18px;pointer-events:none}
+.dots i{position:absolute;top:9px;border-radius:50%;transform:translate(-50%,-50%);opacity:.9;box-shadow:0 0 6px currentColor}
+.marks i{position:absolute;top:0;width:7px;height:7px;background:#64d2ff;transform:translateX(-50%) rotate(45deg);border-radius:1px}
+@media(pointer:coarse){.dots i{top:15px}}
+.invite{border:1px solid var(--line);background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 30%,transparent),rgba(255,255,255,.05));border-radius:22px;padding:1.1rem 1.2rem;margin:0 0 1.2rem}
+.invite small{color:var(--dim);letter-spacing:.08em;text-transform:uppercase;font-size:.7rem}.invite h2{margin:.2rem 0;font-size:1.35rem;letter-spacing:-.02em}
+.invite .big{font-size:1.7rem;font-weight:700;font-variant-numeric:tabular-nums;margin:.4rem 0}
+.recap{border-radius:24px;padding:1.4rem;background:linear-gradient(145deg,var(--v1),var(--v2));border:1px solid var(--line);text-align:center}
+.recap .n{font-size:2.4rem;font-weight:700;letter-spacing:-.03em;line-height:1.1}.recap .l{color:var(--dim);font-size:.8rem;margin-bottom:.8rem}
+.recap .g{display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem;margin-top:.8rem}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<section id="home">
+  <div class="card glass">
+    <div id="invite" class="invite hidden"><small>You are invited</small><h2 id="invtitle"></h2><div class="hint" id="invwhen"></div><div class="big" id="invcount"></div><div class="hint" id="invinfo"></div><button class="ghost" id="invcal" style="margin-top:.5rem">Add to calendar</button></div>
+    <h1>Watch together.</h1>
+    <p>Create a room, share the code, and everyone plays, pauses and seeks in perfect sync.</p>
+    <label for="name">Your name</label>
+    <input id="name" type="text" maxlength="20" placeholder="e.g. Rahul" autocomplete="nickname">
+    <label for="code">Room code</label>
+    <input id="code" type="text" maxlength="12" placeholder="Enter a friend's code" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go">
+    <label for="password">Room password (if locked)</label><input id="password" type="text" maxlength="64" placeholder="Optional password" autocomplete="off">
+    <p id="joinerror" role="alert" class="hint hidden"></p>
+    <div class="actions">
+      <button id="join">Join room</button>
+      <button id="create" class="ghost">Create new room</button>
+    </div>
+  </div>
+</section>
+
+<section id="room" class="hidden">
+  <header class="glass">
+    <b id="roomtitle">Watch Party</b>
+    <span class="code" id="roomcode"></span>
+    <button class="ghost" id="copy">Copy invite link</button>
+    <span class="sp"></span>
+    <button class="ghost" id="brbbtn">BRB</button>
+    <button class="ghost" id="recapbtn">Recap</button>
+    <button class="ghost hidden" id="requestremote">Request remote</button>
+    <button class="ghost hidden" id="settings" aria-label="Room settings">Room settings</button>
+    <button class="ghost hidden" id="readylaunch">Start with countdown</button>
+    <button class="ghost" id="resync">Resync</button>
+    <button class="ghost hidden" id="endparty">End party</button>
+  </header>
+  <main>
+    <div class="stage" id="stage">
+      <div class="empty" id="empty"><div><strong>Nothing playing yet</strong>Paste a YouTube, Vimeo or video link below, or upload a file.</div></div>
+      <div id="reactions" aria-hidden="true"></div>
+      <div id="waitpill" class="hidden" role="status"></div>
+      <div id="chips" role="status"></div>
+      <div id="notepop" class="hidden"></div>
+      <div id="countnumber" class="hidden" aria-live="assertive"><span>3</span></div>
+      <div class="ui hidden" id="ui">
+        <div class="shield" id="shield"></div>
+        <div class="vtitle" id="vtitle"></div>
+        <div class="spin" id="spin"></div>
+        <button class="bigplay" id="bigplay" aria-label="Play"></button>
+        <div class="ctrl" id="ctrl">
+          <div class="seek" id="seek"><div class="buf" id="sbuf"></div><div class="fill" id="sfill"></div><div class="knob" id="sknob"></div><div class="tip" id="stip">0:00</div><div class="dots" id="sdots"></div><div class="marks" id="smarks"></div></div>
+          <div class="row">
+            <button class="ib" id="bplay" aria-label="Play or pause"></button>
+            <button class="ib" id="bback" aria-label="Back 10 seconds"></button>
+            <button class="ib" id="bfwd" aria-label="Forward 10 seconds"></button>
+            <span class="time" id="vtime">0:00 / 0:00</span>
+            <span class="sp"></span>
+            <button class="ib" id="bmute" aria-label="Mute"></button>
+            <input type="range" id="vol" min="0" max="1" step="0.02" value="1" aria-label="Volume">
+            <button class="ib txt" id="bnote" aria-label="Add a note at this moment">Note</button>
+            <button class="ib txt" id="bglow" aria-label="Ambient glow">Glow</button>
+            <button class="ib txt" id="bspeed" aria-label="Playback speed">1×</button>
+            <button class="ib hidden" id="bpip" aria-label="Picture in picture"></button>
+            <button class="ib" id="bfs" aria-label="Fullscreen"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="controlhint" class="hint hidden" role="status">Only the host controls playback</div>
+    <div id="prog"><i></i></div>
+    <div class="src glass">
+      <input id="url" type="text" placeholder="Paste a YouTube, Vimeo or any video link" aria-label="Video link">
+      <button id="load">Play</button>
+      <button class="ghost" id="pick">Upload</button>
+      <button class="ghost" id="queuebtn">Queue</button>
+      <input id="file" type="file" accept="video/*" class="hidden">
+    </div>
+  </main>
+  <aside class="glass">
+    <div id="users"></div>
+    <div id="msgs" aria-live="polite"></div>
+    <div id="typing"></div>
+    <div id="reactbar" role="group" aria-label="Quick reactions"></div>
+    <form id="chatform">
+      <input id="chatin" type="text" maxlength="500" placeholder="Message" autocomplete="off">
+      <button>Send</button>
+    </form>
+  </aside>
+</section>
+
+<div id="toast" class="glass hidden"></div>
+<div id="conn" class="glass hidden" role="status"><i></i>Reconnecting…</div>
+<button id="unread" class="hidden" aria-live="polite">New messages</button>
+<div id="settingsmodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Room settings"><div class="panel glass">
+ <div class="panel-row"><h2>Room settings</h2><button class="ghost" id="closesettings" aria-label="Close settings">Close</button></div>
+ <h3>Who controls playback?</h3><div class="segments" role="group" aria-label="Control mode"><button data-mode="everyone">Everyone</button><button data-mode="host">Host only</button><button data-mode="ask">Ask host</button></div>
+ <h3>Room vibe</h3><div class="segments v" role="group" aria-label="Room vibe"><button data-vibe="cinema">Cinema</button><button data-vibe="cozy">Cozy</button><button data-vibe="date">Date night</button><button data-vibe="party">Party</button></div>
+ <h3>Movie night</h3><input id="schedtitle" type="text" maxlength="60" placeholder="Title, e.g. Saturday movie night" aria-label="Movie night title"><input id="schedat" type="datetime-local" aria-label="Start time"><div class="panel-row"><button id="saveschedule" class="ghost">Schedule</button><button id="clearschedule" class="ghost">Clear</button></div><p class="hint">Scheduled rooms stay open while empty, so friends can use the invite link and chat in the lobby before the start.</p>
+ <h3>Room access</h3><div class="panel-row"><label><input id="roomlock" type="checkbox"> Lock room</label></div><input id="lockpassword" type="text" maxlength="64" placeholder="Password for new members" aria-label="Room password"><button id="savelock" class="ghost">Save access</button>
+ <h3>Room</h3><input id="roomname" type="text" maxlength="40" placeholder="Room name (optional)" aria-label="Room name"><input id="maxmembers" type="text" inputmode="numeric" maxlength="2" placeholder="Max members (empty = no limit)" aria-label="Maximum members"><button id="saveroom" class="ghost">Save room</button>
+ <h3>Chat</h3><div class="panel-row"><label><input id="chatmute" type="checkbox"> Mute chat for members</label><button class="ghost" id="clearchat">Clear chat</button></div>
+ <h3>Members</h3><div class="panel-row"><label>Pass the remote for <select id="passmin" aria-label="Minutes"><option>5</option><option selected>10</option><option>20</option><option>30</option></select> min</label></div><div id="membertools"></div>
+ </div></div>
+<div id="queuemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Video queue"><div class="panel glass">
+ <div class="panel-row"><h2>Up next</h2><button class="ghost" id="closequeue" aria-label="Close queue">Close</button></div>
+ <input id="qurl" type="text" placeholder="Paste a video link" aria-label="Video link to add"><div class="panel-row"><button id="qadd">Add to queue</button></div>
+ <div id="qsuggest" class="hidden"><h3>Suggestions</h3><div id="qsuggestlist"></div></div>
+ <h3>Queue</h3><div id="qlist"></div>
+</div></div>
+<div id="readymodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Ready check"><div class="panel glass"><h2>Ready to watch?</h2><p class="hint" id="readystatus">Waiting for everyone…</p><div class="panel-row"><button id="imready">Ready</button><button id="begincount" class="hidden">Start anyway</button></div></div></div>
+<div id="notemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Timestamp notes"><div class="panel glass">
+ <div class="panel-row"><h2>Notes</h2><button class="ghost" id="closenote">Close</button></div>
+ <p class="hint" id="noteat"></p><input id="notein" type="text" maxlength="140" placeholder="e.g. Watch this part closely" autocomplete="off"><div class="panel-row"><button id="noteadd">Pin note here</button></div>
+ <h3>Pinned notes</h3><div id="notelist"></div></div></div>
+<div id="recapmodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Recap"><div class="panel glass">
+ <div class="recap"><div class="l" id="rcname">Watch party recap</div><div class="n" id="rcfriends"></div><div class="l">watched together</div><div class="g"><div><div class="n" id="rctime" style="font-size:1.5rem"></div><div class="l">time</div></div><div><div class="n" id="rcreacts" style="font-size:1.5rem"></div><div class="l">reactions</div></div></div><div class="hint" id="rcpeak"></div></div>
+ <div class="panel-row"><button id="rccopy">Copy text</button><button class="ghost" id="rcimg">Save image</button><button class="ghost" id="rcclose">Close</button></div></div></div>
+<div id="kickmodal" class="overlay hidden"><div class="panel glass"><h2>You were removed from this room</h2><p class="hint">You can return home.</p><button id="gohome">Go home</button></div></div>
+<div id="requestmodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Remote request"><div class="panel glass"><h2>Remote request</h2><p id="requestname" class="hint"></p><div class="panel-row"><button id="approveremote">Approve</button><button class="ghost" id="denyremote">Deny</button></div></div></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const socket = io();
+const stage = $('stage');
+let code = '', applying = false, cur = null, curKey = '', joined = false, curSeq = 0, bufSince = 0, bufSent = 0;
+let clientId, roomInfo = { mode: 'everyone', users: [], hostId: null, remoteId: null }, clockOffset = 0, countTimer;
+const newClientId = () => { const bytes = new Uint8Array(16); crypto.getRandomValues(bytes); return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(''); };
+try { clientId = localStorage.getItem('wp-client-id'); if (!clientId || !/^[a-f0-9-]{32,64}$/i.test(clientId)) { clientId = newClientId(); localStorage.setItem('wp-client-id', clientId); } }
+catch (e) { clientId = newClientId(); }
+const isHost = () => roomInfo.hostId === clientId;
+const canControl = () => roomInfo.mode === 'everyone' || isHost() || (roomInfo.mode === 'ask' && roomInfo.remoteId === clientId);
+
+const rand = () => Array.from({length: 5}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add('hidden'), 4000); }
+const scripts = {};
+const loadScript = (src) => scripts[src] || (scripts[src] = new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('load ' + src)); document.head.append(s); }));
+const autoplayMsg = () => toast('Your browser blocked autoplay. Press play once.');
+const addMedia = (el) => stage.insertBefore(el, $('ui'));
+
+// ---- join ----
+try { $('name').value = localStorage.getItem('wp-name') || ''; } catch (e) {}
+if (location.hash.length > 1) $('code').value = decodeURIComponent(location.hash.slice(1));
+function enter(c) {
+  const name = $('name').value.trim() || 'Guest';
+  c = c.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!c) return toast('Enter a room code or create a new room.');
+  try { localStorage.setItem('wp-name', name); } catch (e) {}
+  code = c.slice(0, 12);
+  $('joinerror').classList.add('hidden');
+  socket.emit('join', { code, user: name, clientId, password: $('password').value });
+}
+$('join').onclick = () => enter($('code').value);
+$('create').onclick = () => enter(rand());
+$('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') enter($('code').value); });
+$('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(location.href); toast('Invite link copied'); }
+  catch (e) { toast('Copy the link from the address bar'); }
+};
+
+// ---- players: each returns { time, playing, seek, play, pause, destroy, ready } ----
+const onLocal = (playing, time) => { if (!applying && canControl() && socket.connected) socket.emit('control', { playing, time }); };
+// A video finished: the server moves to the next queued video (duplicate reports are ignored by sequence number).
+const onEnded = () => { if (joined && canControl() && socket.connected) socket.emit('video-ended', { seq: curSeq }); };
+
+function mountHtml5(url) {
+  const el = document.createElement('video');
+  el.controls = false; el.playsInline = true; el.preload = 'metadata'; addMedia(el);
+  let buf = true;
+  el.addEventListener('waiting', () => (buf = true));
+  el.addEventListener('playing', () => (buf = false));
+  el.addEventListener('canplay', () => (buf = false));
+  el.addEventListener('ended', onEnded);
+  let hls, bad = false;
+  if (/\.m3u8(\?|#|$)/i.test(url) && !el.canPlayType('application/vnd.apple.mpegurl')) {
+    var ready = loadScript('https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js').then(() => {
+      hls = new Hls(); hls.loadSource(url); hls.attachMedia(el);
+      return new Promise((r) => el.addEventListener('loadedmetadata', r, { once: true }));
+    });
+  } else {
+    el.src = url;
+    ready = new Promise((r) => { el.addEventListener('loadedmetadata', r, { once: true }); el.addEventListener('error', r, { once: true }); });
+  }
+  el.onerror = () => toast('This video cannot be played. For your own files, use MP4 (H.264). Phone videos in HEVC often fail.');
+  el.onplay = el.onpause = el.onseeked = () => onLocal(!el.paused, el.currentTime);
+  return { custom: true, ready, time: () => el.currentTime, playing: () => !el.paused, seek: (t) => (el.currentTime = t),
+    play: () => el.play().catch(autoplayMsg), pause: () => el.pause(), destroy() { hls && hls.destroy(); el.remove(); },
+    el, dur: () => el.duration || 0, vol: (v) => (el.volume = v), mute: (m) => (el.muted = m), rate: (r) => (el.playbackRate = r),
+    buffered: () => (el.duration && el.buffered.length ? el.buffered.end(el.buffered.length - 1) / el.duration : 0), buffering: () => buf,
+    pip: () => (document.pictureInPictureElement ? document.exitPictureInPicture() : el.requestPictureInPicture()).catch(() => {}),
+    nativeFs: () => el.webkitEnterFullscreen && el.webkitEnterFullscreen() };
+}
+
+function mountYouTube(id) {
+  const holder = document.createElement('div'); const inner = document.createElement('div');
+  holder.className = 'yt'; holder.append(inner); addMedia(holder);
+  const fit = () => { const w = stage.clientWidth, h = stage.clientHeight; let ww = w, hh = w * 9 / 16; if (hh > h) { hh = h; ww = h * 16 / 9; } holder.style.width = ww + 'px'; holder.style.height = hh + 'px'; };
+  const ro = new ResizeObserver(fit); ro.observe(stage); fit();
+  let p, ok = false, last = { t: 0, at: Date.now(), pl: false };
+  const ready = new Promise((res) => {
+    const make = () => { p = new YT.Player(inner, { videoId: id, width: '100%', height: '100%', playerVars: { playsinline: 1, rel: 0, controls: 0, disablekb: 1, modestbranding: 1, iv_load_policy: 3, fs: 0 },
+      events: { onReady: () => { ok = true; res(); },
+        onStateChange: (e) => { if (e.data === 1 || e.data === 2) onLocal(e.data === 1, p.getCurrentTime()); else if (e.data === 0) onEnded(); },
+        onError: () => { toast('YouTube blocks embedding for this video. Try another one.'); res(); } } }); };
+    if (window.YT && YT.Player) make();
+    else { window.onYouTubeIframeAPIReady = make; loadScript('https://www.youtube.com/iframe_api').catch(() => { toast('Could not load YouTube.'); res(); }); }
+  });
+  // YouTube has no seek event, so detect jumps by polling
+  const poll = setInterval(() => {
+    if (!ok) return;
+    const c = p.getCurrentTime(), pl = p.getPlayerState() === 1;
+    const exp = last.t + (last.pl ? (Date.now() - last.at) / 1000 : 0);
+    if (Math.abs(c - exp) > 1.5) onLocal(pl, c);
+    last = { t: c, at: Date.now(), pl };
+  }, 500);
+  return { custom: true, ready, time: () => (ok ? p.getCurrentTime() : 0), playing: () => ok && p.getPlayerState() === 1,
+    seek: (t) => ok && p.seekTo(t, true), play: () => ok && p.playVideo(), pause: () => ok && p.pauseVideo(),
+    destroy() { clearInterval(poll); ro.disconnect(); try { p.destroy(); } catch (e) {} holder.remove(); },
+    dur: () => (ok ? p.getDuration() : 0), vol: (v) => ok && p.setVolume(v * 100), mute: (m) => ok && (m ? p.mute() : p.unMute()),
+    rate: (r) => ok && p.setPlaybackRate(r), buffered: () => (ok ? p.getVideoLoadedFraction() : 0),
+    buffering: () => ok && p.getPlayerState() === 3, title: () => (ok && p.getVideoData ? p.getVideoData().title : '') };
+}
+
+function mountVimeo(id) {
+  const f = document.createElement('iframe');
+  f.src = 'https://player.vimeo.com/video/' + id; f.allow = 'autoplay; fullscreen; picture-in-picture'; addMedia(f);
+  let t = 0, pl = false, p;
+  const ready = loadScript('https://player.vimeo.com/api/player.js').then(() => {
+    p = new Vimeo.Player(f);
+    p.on('timeupdate', (d) => (t = d.seconds));
+    p.on('play', (d) => { pl = true; t = d.seconds; onLocal(true, t); });
+    p.on('pause', (d) => { pl = false; t = d.seconds; onLocal(false, t); });
+    p.on('seeked', (d) => { t = d.seconds; onLocal(pl, t); });
+    p.on('ended', onEnded);
+    return p.ready();
+  });
+  return { ready, time: () => t, playing: () => pl, seek: (x) => p && p.setCurrentTime(x),
+    play: () => p && p.play().catch(autoplayMsg), pause: () => p && p.pause(), destroy() { f.remove(); } };
+}
+
+const mount = (v) => v.provider === 'youtube' ? mountYouTube(v.id) : v.provider === 'vimeo' ? mountVimeo(v.id) : mountHtml5(v.url);
+
+async function apply(s) {
+  applying = true; if (Number.isFinite(s.seq)) curSeq = s.seq;
+  try {
+    if (s.video) {
+      const key = JSON.stringify(s.video);
+      if (key !== curKey) {
+        curKey = key; bufSince = bufSent = 0; lastT = null; glowBlocked = false; cur && cur.destroy(); $('empty').classList.add('hidden');
+        cur = mount(s.video); setupUI(s.video); await cur.ready;
+        if (custom) applyAudio();
+      }
+    }
+    if (cur) {
+      if (Math.abs(cur.time() - s.time) > 0.8) cur.seek(s.time);
+      if (s.playing && !cur.playing()) cur.play();
+      if (!s.playing && cur.playing()) cur.pause();
+    }
+  } finally { setTimeout(() => (applying = false), 800); }
+}
+socket.on('state', apply);
+$('resync').onclick = () => socket.emit('resync');
+socket.on('connect', () => { if (code) { joined = false; socket.emit('join', { code, user: $('name').value.trim() || 'Guest', clientId, password: $('password').value }); } syncClock(); });
+socket.on('joined', () => { joined = true; location.hash = code; $('roomcode').textContent = code; $('home').classList.add('hidden'); $('room').classList.remove('hidden'); });
+socket.on('join-error', (msg) => { joined = false; code = ''; $('room').classList.add('hidden'); $('home').classList.remove('hidden'); $('joinerror').textContent = msg; $('joinerror').classList.remove('hidden'); toast(msg); });
+socket.on('not-allowed', toast);
+socket.on('remote-result', toast);
+socket.on('kicked', () => { code = ''; joined = false; $('settingsmodal').classList.add('hidden'); $('readymodal').classList.add('hidden'); $('kickmodal').classList.remove('hidden'); });
+socket.on('room-ended', (reason) => { alert(reason + '\nRoom data and uploaded videos have been removed.'); code = ''; joined = false; location.hash = ''; location.reload(); });
+$('endparty').onclick = () => { if (isHost() && confirm('End this watch party for everyone? The room and all uploaded videos will be deleted.')) socket.emit('end-party'); };
+$('gohome').onclick = () => { location.hash = ''; location.reload(); };
+function syncClock() {
+  const samples = []; let i = 0;
+  const next = () => { if (i++ >= 5) { if (samples.length) clockOffset = samples.sort((a,b) => a-b)[Math.floor(samples.length / 2)]; return; }
+    const t = Date.now(); socket.timeout(1500).emit('clock-ping', t, (err, data) => { if (!err && data && Number.isFinite(data.serverTime)) samples.push(data.serverTime - (t + Date.now()) / 2); setTimeout(next, 120); });
+  }; next();
+}
+function updatePermissions() {
+  const permitted = canControl();
+  const muted = !!roomInfo.chatMuted && !isHost();
+  $('chatin').disabled = muted; $('chatform').querySelector('button').disabled = muted;
+  $('chatin').placeholder = muted ? 'Chat is muted by the host' : 'Message';
+  $('endparty').classList.toggle('hidden', !isHost());
+  ['bigplay', 'bplay', 'bback', 'bfwd', 'load', 'pick'].forEach((id) => { $(id).disabled = !permitted; });
+  $('seek').setAttribute('aria-disabled', String(!permitted));
+  $('seek').style.opacity = permitted ? '' : '.45';
+  $('url').disabled = !permitted;
+  $('controlhint').classList.toggle('hidden', permitted);
+  $('controlhint').textContent = roomInfo.mode === 'ask' ? 'Request the remote to control playback' : 'Only the host controls playback';
+  $('requestremote').classList.toggle('hidden', isHost() || roomInfo.mode !== 'ask' || permitted);
+  $('settings').classList.toggle('hidden', !isHost());
+  $('readylaunch').classList.toggle('hidden', !isHost());
+  const me = roomInfo.users.find((u) => u.id === clientId);
+  $('brbbtn').textContent = me && me.brb ? "I'm back" : 'BRB';
+}
+function renderUsers() {
+  const el = $('users'); el.textContent = '';
+  const b = document.createElement('b'); b.textContent = roomInfo.users.length + ' watching'; el.append(b);
+  roomInfo.users.forEach((m) => {
+    const wrap = document.createElement('span'); wrap.append(document.createTextNode(' · ' + m.name));
+    if (m.host || m.remote) { const pill = document.createElement('span'); pill.className = 'pill'; pill.textContent = m.host ? 'Host' : 'Remote'; wrap.append(pill); }
+    el.append(wrap);
+  });
+}
+function renderMemberTools() {
+  const el = $('membertools'); el.textContent = '';
+  roomInfo.users.forEach((m) => {
+    const row = document.createElement('div'); row.className = 'panel-row';
+    const name = document.createElement('span'); name.textContent = m.name + (m.host ? ' · Host' : m.remote ? ' · Remote' : ''); row.append(name);
+    if (!m.host) {
+      const actions = document.createElement('div'); actions.className = 'host-actions';
+      const choices = [['host', 'Make host'], ['kick', 'Remove'], [m.remote ? 'revoke' : 'remote', m.remote ? 'Take remote' : 'Give remote']];
+      if (roomInfo.mode !== 'everyone' && !m.remote) choices.push(['pass', 'Pass remote']);
+      choices.forEach(([action, label]) => { if ((action === 'remote' || action === 'revoke') && roomInfo.mode !== 'ask') return;
+        if (action === 'pass') { const b = document.createElement('button'); b.className = 'ghost'; b.textContent = label; b.onclick = () => socket.emit('pass-remote', { id: m.id, minutes: Number($('passmin').value) }); actions.append(b); return; }
+        const btn = document.createElement('button'); btn.className = 'ghost'; btn.textContent = label; btn.onclick = () => {
+          if ((action === 'kick' || action === 'host') && !confirm(`${label} ${m.name}?`)) return;
+          socket.emit('member-action', { id: m.id, action });
+        }; actions.append(btn); }); row.append(actions);
+    } el.append(row);
+  });
+}
+socket.on('room-info', (info) => {
+  roomInfo = info; updatePermissions(); renderUsers(); renderMemberTools(); renderRoomMeta(); renderQueue(); applyVibe(info.vibe); renderChips(); renderSchedForm();
+  document.querySelectorAll('[data-mode]').forEach((b) => { b.classList.toggle('active', b.dataset.mode === info.mode); b.setAttribute('aria-pressed', String(b.dataset.mode === info.mode)); });
+  $('roomlock').checked = info.locked;
+  if (!isHost()) $('settingsmodal').classList.add('hidden');
+});
+function renderRoomMeta() {
+  const t = $('roomtitle'); t.textContent = roomInfo.name || 'Watch Party'; t.classList.toggle('named', !!roomInfo.name);
+  $('chatmute').checked = !!roomInfo.chatMuted;
+  if (document.activeElement !== $('roomname')) $('roomname').value = roomInfo.name || '';
+  if (document.activeElement !== $('maxmembers')) $('maxmembers').value = roomInfo.maxMembers || '';
+  paintUnread();
+}
+$('saveroom').onclick = () => {
+  const m = $('maxmembers').value.trim();
+  socket.emit('set-room-name', $('roomname').value); socket.emit('set-max', m ? Number(m) : 0); toast('Room saved');
+};
+$('chatmute').onchange = () => socket.emit('set-chat-muted', $('chatmute').checked);
+$('clearchat').onclick = () => { if (confirm('Clear the chat for everyone?')) socket.emit('clear-chat'); };
+document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => socket.emit('set-mode', b.dataset.mode));
+$('settings').onclick = () => $('settingsmodal').classList.remove('hidden');
+$('closesettings').onclick = () => $('settingsmodal').classList.add('hidden');
+$('settingsmodal').onclick = (e) => { if (e.target === $('settingsmodal')) $('settingsmodal').classList.add('hidden'); };
+$('savelock').onclick = () => socket.emit('set-lock', { locked: $('roomlock').checked, password: $('lockpassword').value });
+$('requestremote').onclick = () => { socket.emit('request-remote'); toast('Request sent to host'); };
+let pendingRequest = null;
+socket.on('remote-request', (request) => { if (!isHost()) return; pendingRequest = request; $('requestname').textContent = `${request.name} would like to control playback.`; $('requestmodal').classList.remove('hidden'); });
+function decideRemote(approve) { if (pendingRequest) socket.emit('remote-decision', { id: pendingRequest.id, approve }); pendingRequest = null; $('requestmodal').classList.add('hidden'); }
+$('approveremote').onclick = () => decideRemote(true);
+$('denyremote').onclick = () => decideRemote(false);
+$('readylaunch').onclick = () => socket.emit('ready-start');
+socket.on('ready-prompt', () => { $('imready').disabled = false; $('imready').textContent = 'Ready'; $('readymodal').classList.remove('hidden'); $('begincount').classList.toggle('hidden', !isHost()); });
+$('imready').onclick = () => { socket.emit('ready'); $('imready').disabled = true; $('imready').textContent = 'Ready confirmed'; };
+socket.on('ready-status', ({ ready, total }) => { $('readystatus').textContent = `${ready.length}/${total} ready`; $('begincount').textContent = ready.length === total ? 'Start' : 'Start anyway'; });
+$('begincount').onclick = () => socket.emit('countdown-start');
+socket.on('countdown', ({ startAt, time }) => {
+  $('readymodal').classList.add('hidden'); clearInterval(countTimer);
+  applying = true; if (cur) { cur.pause(); cur.seek(time); }
+  const draw = () => {
+    const remaining = startAt - (Date.now() + clockOffset);
+    if (remaining <= 0) { clearInterval(countTimer); $('countnumber').classList.add('hidden'); if (cur) { cur.seek(time); cur.play(); } setTimeout(() => { applying = false; }, 900); return; }
+    const n = Math.min(3, Math.max(1, Math.ceil(remaining / 1000)));
+    $('countnumber').classList.remove('hidden'); $('countnumber').firstElementChild.textContent = n;
+  }; draw(); countTimer = setInterval(draw, 40);
+});
+
+// ---- custom player UI ----
+const ui = $('ui'), seekEl = $('seek'), ctrlEl = $('ctrl');
+const S = (inner, extra = '') => `<svg viewBox="0 0 24 24" ${extra}>${inner}</svg>`;
+const ico = {
+  play: S('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10-6.5a1 1 0 0 0 0-1.72l-10-6.5A1 1 0 0 0 8 5.5z" fill="#fff" stroke="none"/>'),
+  pause: S('<rect x="6" y="5" width="4.2" height="14" rx="1.4" fill="#fff" stroke="none"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.4" fill="#fff" stroke="none"/>'),
+  back: S('<path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v4h4"/><text x="12" y="15.5" font-size="7.5" font-weight="700" fill="#fff" stroke="none" text-anchor="middle">10</text>'),
+  fwd: S('<path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v4h-4"/><text x="12" y="15.5" font-size="7.5" font-weight="700" fill="#fff" stroke="none" text-anchor="middle">10</text>'),
+  vol: S('<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="#fff"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/>'),
+  mute: S('<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="#fff"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>'),
+  pip: S('<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="11" width="6" height="4.5" rx="1" fill="#fff"/>'),
+  fs: S('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
+  fsx: S('<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'),
+};
+$('bplay').innerHTML = ico.play; $('bigplay').innerHTML = ico.play; $('bback').innerHTML = ico.back; $('bfwd').innerHTML = ico.fwd;
+$('bmute').innerHTML = ico.vol; $('bpip').innerHTML = ico.pip; $('bfs').innerHTML = ico.fs;
+
+let custom = false, dragging = false, idleT, lastPl = null, vol = 1, muted = false, speedI = 2;
+const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+try { vol = Number(localStorage.getItem('wp-vol') ?? 1); muted = localStorage.getItem('wp-muted') === '1'; } catch (e) {}
+const fmt = (s) => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+
+function applyAudio() {
+  const v = muted ? 0 : vol;
+  if (cur && custom) { cur.vol(vol); cur.mute(muted); }
+  $('vol').value = v; $('vol').style.setProperty('--v', v * 100 + '%');
+  $('bmute').innerHTML = v === 0 ? ico.mute : ico.vol;
+  try { localStorage.setItem('wp-vol', vol); localStorage.setItem('wp-muted', muted ? '1' : '0'); } catch (e) {}
+}
+function setupUI(v) {
+  custom = !!cur.custom; ui.classList.toggle('hidden', !custom);
+  $('vtitle').textContent = v.name || ''; speedI = 2; $('bspeed').textContent = '1×';
+  $('bpip').classList.toggle('hidden', !(cur.pip && document.pictureInPictureEnabled));
+  $('bfs').classList.toggle('hidden', !canStageFs && !cur.nativeFs);
+  lastPl = null; wake();
+}
+function wake() {
+  ui.classList.remove('idle'); clearTimeout(idleT);
+  idleT = setTimeout(() => { if (cur && cur.playing() && !dragging && !ctrlEl.matches(':hover')) ui.classList.add('idle'); }, 2800);
+}
+['mousemove', 'touchstart', 'keydown'].forEach((ev) => stage.addEventListener(ev, wake, { passive: true }));
+
+const toggle = () => { if (cur && custom && canControl()) (cur.playing() ? cur.pause() : cur.play()); };
+const userSeek = (t) => { if (!cur || !canControl()) return; const d = cur.dur() || Infinity; t = Math.min(Math.max(0, t), d); cur.seek(t); onLocal(cur.playing(), t); };
+const canStageFs = !!(stage.requestFullscreen || stage.webkitRequestFullscreen);
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+const goFs = () => {
+  if (fsEl()) return (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  if (canStageFs) return (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage);
+  if (cur && cur.nativeFs) cur.nativeFs(); // iPhone: only the video element can go fullscreen
+};
+const onFs = () => {
+  const on = !!fsEl(); $('bfs').innerHTML = on ? ico.fsx : ico.fs;
+  try { if (matchMedia('(pointer:coarse)').matches && screen.orientation && screen.orientation.lock) on ? screen.orientation.lock('landscape').catch(() => {}) : screen.orientation.unlock(); } catch (e) {}
+};
+document.addEventListener('fullscreenchange', onFs);
+document.addEventListener('webkitfullscreenchange', onFs);
+
+let clickT = null;
+let wasIdle = false;
+$('shield').addEventListener('pointerdown', (e) => { wasIdle = e.pointerType === 'touch' && ui.classList.contains('idle'); }, true);
+$('shield').onclick = () => { if (wasIdle) { wasIdle = false; return; } if (clickT) { clearTimeout(clickT); clickT = null; goFs(); } else clickT = setTimeout(() => { clickT = null; toggle(); }, 230); };
+$('bigplay').onclick = toggle; $('bplay').onclick = toggle; $('bfs').onclick = goFs;
+$('bback').onclick = () => userSeek(cur.time() - 10);
+$('bfwd').onclick = () => userSeek(cur.time() + 10);
+$('bmute').onclick = () => { muted = !muted; if (!muted && vol === 0) vol = 0.6; applyAudio(); };
+$('vol').oninput = (e) => { vol = Number(e.target.value); muted = vol === 0; applyAudio(); };
+$('bspeed').onclick = () => { speedI = (speedI + 1) % speeds.length; cur.rate(speeds[speedI]); $('bspeed').textContent = speeds[speedI] + '×'; };
+$('bpip').onclick = () => cur.pip && cur.pip();
+
+const frac = (e) => { const r = seekEl.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+const preview = (e) => { const f = frac(e) * 100; $('sfill').style.width = f + '%'; $('sknob').style.left = f + '%'; };
+seekEl.addEventListener('pointerdown', (e) => { if (!custom || !canControl()) return; dragging = true; seekEl.classList.add('drag'); seekEl.setPointerCapture(e.pointerId); preview(e); });
+seekEl.addEventListener('pointermove', (e) => {
+  const f = frac(e); $('stip').style.left = f * 100 + '%'; $('stip').textContent = fmt(f * (cur ? cur.dur() : 0));
+  if (dragging) preview(e);
+});
+seekEl.addEventListener('pointerup', (e) => { if (!dragging) return; dragging = false; seekEl.classList.remove('drag'); userSeek(frac(e) * (cur.dur() || 0)); });
+
+document.addEventListener('keydown', (e) => {
+  if (!cur || !custom || /^(INPUT|TEXTAREA|BUTTON)$/.test(e.target.tagName) || e.metaKey || e.ctrlKey) return;
+  const k = e.key;
+  if (k === ' ' || k === 'k') { e.preventDefault(); toggle(); }
+  else if (k === 'ArrowLeft') { e.preventDefault(); userSeek(cur.time() - 5); }
+  else if (k === 'ArrowRight') { e.preventDefault(); userSeek(cur.time() + 5); }
+  else if (k === 'f') goFs();
+  else if (k === 'm') { muted = !muted; applyAudio(); }
+});
+
+setInterval(() => {
+  if (!cur || !custom) return;
+  const d = cur.dur() || 0, t = cur.time(), pl = cur.playing();
+  if (!dragging) { const f = d ? Math.min(100, t / d * 100) : 0; $('sfill').style.width = f + '%'; $('sknob').style.left = f + '%'; }
+  $('sbuf').style.width = cur.buffered() * 100 + '%';
+  $('vtime').textContent = fmt(t) + ' / ' + fmt(d);
+  ui.classList.toggle('buffering', !!cur.buffering());
+  if (pl !== lastPl) { ui.classList.toggle('playing', pl); $('bplay').innerHTML = pl ? ico.pause : ico.play; $('bigplay').innerHTML = ico.play; if (pl) wake(); else ui.classList.remove('idle'); lastPl = pl; }
+  if (cur.title) { const n = cur.title(); if (n && $('vtitle').textContent !== n) $('vtitle').textContent = n; }
+}, 200);
+applyAudio();
+
+// ---- link handling ----
+function parseLink(u) {
+  let m;
+  if ((m = u.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/))) return { provider: 'youtube', id: m[1] };
+  if (/^[\w-]{11}$/.test(u)) return { provider: 'youtube', id: u };
+  if ((m = u.match(/vimeo\.com\/(?:.*\/)?(\d{6,})/))) return { provider: 'vimeo', id: m[1] };
+  if (/^https?:\/\//i.test(u) && /\.(mp4|webm|ogg|ogv|mov|m4v|m3u8)(\?|#|$)/i.test(u)) return { provider: 'html5', url: u, name: u.split('/').pop().split('?')[0] };
+  if (/^https?:\/\//i.test(u)) return { provider: 'resolve', url: u };
+  return null;
+}
+async function linkToVideo(u) {
+  const v = parseLink(u);
+  if (!v) { toast('Paste a valid video link.'); return null; }
+  if (v.provider === 'resolve') {
+    toast('Looking for the video…');
+    try {
+      const r = await fetch('/resolve?url=' + encodeURIComponent(u)); const j = await r.json();
+      if (!r.ok) { toast(j.error || 'Could not open this link.'); return null; }
+      v.provider = 'html5'; v.url = j.url; v.name = j.title;
+    } catch (e) { toast('Could not open this link.'); return null; }
+  }
+  return v;
+}
+$('load').onclick = async () => {
+  if (!canControl()) return toast('You do not have the remote.');
+  const u = $('url').value.trim(); if (!u) return;
+  const v = await linkToVideo(u); if (!v) return;
+  socket.emit('video', v); $('url').value = '';
+};
+$('url').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('load').click(); });
+
+// ---- upload ----
+$('pick').onclick = () => { if (canControl()) $('file').click(); };
+$('file').onchange = () => {
+  if (!canControl()) return;
+  const f = $('file').files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('video', f);
+  const xhr = new XMLHttpRequest(), bar = $('prog');
+  xhr.open('POST', '/upload'); bar.style.display = 'block';
+  xhr.setRequestHeader('X-Room-Code', code);
+  xhr.setRequestHeader('X-Socket-ID', socket.id);
+  xhr.upload.onprogress = (e) => { if (e.lengthComputable) bar.firstElementChild.style.width = (e.loaded / e.total * 100) + '%'; };
+  xhr.onload = () => {
+    bar.style.display = 'none'; bar.firstElementChild.style.width = '0';
+    let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) {}
+    if (xhr.status === 200) socket.emit('video', { provider: 'html5', url: r.url, name: r.name });
+    else toast(r.error || 'Upload failed');
+  };
+  xhr.onerror = () => { bar.style.display = 'none'; toast('Upload failed'); };
+  xhr.send(fd); $('file').value = '';
+};
+
+// ---- chat ----
+function addMsg(m) {
+  const d = document.createElement('div');
+  d.className = 'm' + (m.system ? ' sys' : '');
+  if (m.system) d.textContent = m.msg;
+  else { const b = document.createElement('b'); b.textContent = m.name + '  '; d.append(b, document.createTextNode(m.msg)); }
+  $('msgs').append(d); $('msgs').scrollTop = 1e9;
+  if (m.tid) setTyping(m.tid, null);
+  if (!m.system && !m.mine) noteUnread();
+}
+socket.on('chat', addMsg);
+socket.on('chat-cleared', () => { $('msgs').textContent = ''; typers.forEach((x) => clearTimeout(x.t)); typers.clear(); renderTyping(); addMsg({ system: true, msg: 'The host cleared the chat' }); });
+$('chatform').onsubmit = (e) => {
+  e.preventDefault(); const t = $('chatin').value.trim(); if (!t) return;
+  if (!socket.connected) return toast('You are offline. Reconnecting…');
+  socket.emit('chat', t); $('chatin').value = ''; sendTyping(false);
+};
+
+// typing indicator
+const typers = new Map(); let typingSent = 0, typingStop;
+const sendTyping = (on) => { const now = Date.now(); if (!socket.connected || (on && now - typingSent < 2500) || (!on && !typingSent)) return; typingSent = on ? now : 0; socket.emit('typing', on); };
+$('chatin').addEventListener('input', () => { if ($('chatin').value) { sendTyping(true); clearTimeout(typingStop); typingStop = setTimeout(() => sendTyping(false), 3000); } else sendTyping(false); });
+$('chatin').addEventListener('blur', () => sendTyping(false));
+function setTyping(tid, name) {
+  const old = typers.get(tid); if (old) clearTimeout(old.t);
+  if (name) typers.set(tid, { name, t: setTimeout(() => setTyping(tid, null), 5000) }); else typers.delete(tid);
+  renderTyping();
+}
+function renderTyping() {
+  const n = [...typers.values()].map((x) => x.name);
+  $('typing').textContent = !n.length ? '' : n.length === 1 ? `${n[0]} is typing…` : n.length === 2 ? `${n[0]} and ${n[1]} are typing…` : 'Several people are typing…';
+}
+socket.on('typing', (d) => { if (d && typeof d.tid === 'string') setTyping(d.tid, d.on ? String(d.name || 'Someone').slice(0, 20) : null); });
+
+// unread badge: shows when the chat is scrolled out of view (mobile) or the tab is in the background
+let unread = 0, asideVisible = true;
+const pageTitle = () => (roomInfo.name ? roomInfo.name + ' · Watch Party' : 'Watch Party');
+function paintUnread() {
+  document.title = unread ? `(${unread}) ${pageTitle()}` : pageTitle();
+  $('unread').textContent = unread === 1 ? '1 new message' : `${unread} new messages`;
+  $('unread').classList.toggle('hidden', !unread || asideVisible);
+}
+const noteUnread = () => { if (asideVisible && !document.hidden) return; unread++; paintUnread(); };
+const clearUnread = () => { if (document.hidden || !asideVisible) return; unread = 0; paintUnread(); };
+if ('IntersectionObserver' in window) new IntersectionObserver((es) => { asideVisible = es[es.length - 1].isIntersecting; if (asideVisible) clearUnread(); else paintUnread(); }, { threshold: 0.4 }).observe(document.querySelector('aside'));
+$('unread').onclick = () => document.querySelector('aside').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'auto' : 'smooth', block: 'end' });
+
+// quick reactions
+const rxIco = {
+  heart: S('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>'),
+  like: S('<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>'),
+  laugh: S('<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>'),
+  wow: S('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="16" r="2"/><path d="M9 9h.01M15 9h.01"/>'),
+  star: S('<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>'),
+};
+let lastReact = 0;
+Object.keys(rxIco).forEach((key) => {
+  const b = document.createElement('button'); b.className = 'rb'; b.type = 'button'; b.setAttribute('aria-label', 'React: ' + key); b.innerHTML = rxIco[key];
+  b.onclick = () => { const now = Date.now(); if (!socket.connected || now - lastReact < 250) return; lastReact = now; socket.emit('reaction', key); };
+  $('reactbar').append(b);
+});
+socket.on('reaction', (d) => {
+  if (!d || !rxIco[d.key]) return;
+  const box = $('reactions'), el = document.createElement('div'); el.className = 'rx'; el.innerHTML = rxIco[d.key]; el.title = String(d.name || '');
+  el.style.setProperty('--x', 10 + Math.random() * 60 + 'px'); el.style.setProperty('--dx', Math.random() * 40 - 20 + 'px');
+  box.append(el); while (box.children.length > 12) box.firstChild.remove();
+  setTimeout(() => el.remove(), 2300);
+});
+
+// ---- queue ----
+let qInfo = { queue: [] }, qSug = [];
+function qRow(item, actions) {
+  const row = document.createElement('div'); row.className = 'panel-row';
+  const t = document.createElement('div'); t.className = 'qlabel'; t.textContent = item.label;
+  const by = document.createElement('div'); by.className = 'qby'; by.textContent = 'Added by ' + item.by; t.append(by); row.append(t);
+  if (actions.length) { const box = document.createElement('div'); box.className = 'host-actions';
+    actions.forEach(([label, fn]) => { const b = document.createElement('button'); b.className = 'ghost'; b.textContent = label; b.onclick = fn; box.append(b); }); row.append(box); }
+  return row;
+}
+function renderQueue() {
+  const hostNow = isHost(), n = qInfo.queue.length, p = hostNow ? qSug.length : 0, btn = $('queuebtn');
+  btn.textContent = n ? `Queue · ${n}` : 'Queue';
+  if (p) { const pill = document.createElement('span'); pill.className = 'pill'; pill.textContent = p + ' new'; btn.append(pill); }
+  $('qadd').textContent = hostNow ? 'Add to queue' : 'Suggest to host';
+  $('qsuggest').classList.toggle('hidden', !p);
+  const sl = $('qsuggestlist'); sl.textContent = '';
+  if (hostNow) qSug.forEach((q) => sl.append(qRow(q, [['Approve', () => socket.emit('queue-decision', { id: q.id, approve: true })], ['Reject', () => socket.emit('queue-decision', { id: q.id, approve: false })]])));
+  const ql = $('qlist'); ql.textContent = '';
+  if (!n) { const e = document.createElement('p'); e.className = 'hint'; e.textContent = 'Nothing queued yet. The next video starts automatically when the current one ends.'; ql.append(e); }
+  qInfo.queue.forEach((q) => ql.append(qRow(q, hostNow ? [['Play now', () => socket.emit('queue-play', { id: q.id })], ['Remove', () => socket.emit('queue-remove', { id: q.id })]] : [])));
+}
+socket.on('queue-info', (q) => { qInfo = q && Array.isArray(q.queue) ? q : { queue: [] }; renderQueue(); });
+socket.on('suggestions', (list) => { list = Array.isArray(list) ? list : []; if (isHost() && list.length > qSug.length) toast('New video suggestion'); qSug = list; renderQueue(); });
+$('queuebtn').onclick = () => { renderQueue(); $('queuemodal').classList.remove('hidden'); };
+$('closequeue').onclick = () => $('queuemodal').classList.add('hidden');
+$('queuemodal').onclick = (e) => { if (e.target === $('queuemodal')) $('queuemodal').classList.add('hidden'); };
+$('qadd').onclick = async () => { const u = $('qurl').value.trim(); if (!u) return; const v = await linkToVideo(u); if (!v) return; socket.emit('queue-suggest', v); $('qurl').value = ''; };
+$('qurl').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('qadd').click(); });
+socket.on('kicked', () => $('queuemodal').classList.add('hidden'));
+
+// ---- connection polish ----
+const showConn = (on) => $('conn').classList.toggle('hidden', !on);
+socket.on('disconnect', (why) => {
+  if (!code) return;
+  if (why === 'io server disconnect') { showConn(false); if ($('kickmodal').classList.contains('hidden')) toast('This session ended. Reload the page to rejoin.'); return; }
+  showConn(true);
+});
+socket.on('connect_error', () => { if (code) showConn(true); });
+socket.on('joined', () => { if (!$('conn').classList.contains('hidden')) toast('Back online'); showConn(false); });
+socket.on('join-error', () => showConn(false));
+addEventListener('online', () => { if (!socket.connected) socket.connect(); });
+// Waiting for a buffering viewer
+socket.on('waiting', (names) => {
+  const el = $('waitpill'); names = Array.isArray(names) ? names.map((n) => String(n).slice(0, 20)) : [];
+  if (!names.length) return el.classList.add('hidden');
+  el.textContent = `Waiting for ${names.join(', ')} to buffer…`; el.classList.remove('hidden');
+});
+// Report our own stalls: after 1.5s of buffering tell the room, and say when we have enough data again.
+const bufferAhead = () => (cur.buffered() || 0) * (cur.dur() || 0) - cur.time();
+setInterval(() => {
+  if (!cur || !custom || !joined || !socket.connected) return;
+  const now = Date.now();
+  if (!bufSent) {
+    if (cur.buffering()) { bufSince = bufSince || now; if (now - bufSince > 1500) { bufSent = now; socket.emit('buffering', true); } } else bufSince = 0;
+  } else {
+    const enough = !cur.buffering() && (bufferAhead() >= 3 || cur.buffered() > 0.995);
+    if (enough || now - bufSent > 12000) { bufSent = 0; bufSince = 0; socket.emit('buffering', false); }
+  }
+}, 500);
+
+// ================= Phase 2 features =================
+const MMSS = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), x = t % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+const serverNow = () => Date.now() + clockOffset;
+
+// ---- room vibes ----
+const VIBES = {
+  cinema: { v1: '#1c2a4a', v2: '#2a1640', a: '#0a84ff', tint: '10,132,255', mix: 0, pow: .5 },
+  cozy: { v1: '#4a2a12', v2: '#3a1620', a: '#ff9f0a', tint: '255,159,10', mix: .35, pow: .45 },
+  date: { v1: '#4a1230', v2: '#2a1046', a: '#ff375f', tint: '255,55,95', mix: .4, pow: .5 },
+  party: { v1: '#3a1068', v2: '#073c52', a: '#bf5af2', tint: '191,90,242', mix: .25, pow: .7 },
+};
+let vibeName = 'cinema', vibe = VIBES.cinema;
+function applyVibe(n) {
+  vibeName = VIBES[n] ? n : 'cinema'; vibe = VIBES[vibeName];
+  const st = document.documentElement.style; st.setProperty('--v1', vibe.v1); st.setProperty('--v2', vibe.v2); st.setProperty('--blue', vibe.a);
+  document.querySelectorAll('[data-vibe]').forEach((b) => { b.classList.toggle('active', b.dataset.vibe === vibeName); b.setAttribute('aria-pressed', String(b.dataset.vibe === vibeName)); });
+}
+document.querySelectorAll('[data-vibe]').forEach((b) => b.onclick = () => socket.emit('set-vibe', b.dataset.vibe));
+
+// ---- ambient glow (samples the picture of uploads / direct files; other sources use the vibe colour) ----
+let glowOn = true, glowBlocked = false, hue = 0;
+try { glowOn = localStorage.getItem('wp-glow') !== '0'; } catch (e) {}
+const gcv = document.createElement('canvas'); gcv.width = gcv.height = 4;
+const gctx = gcv.getContext('2d', { willReadFrequently: true });
+const paintBtnGlow = () => { $('bglow').style.opacity = glowOn ? '1' : '.5'; $('bglow').setAttribute('aria-pressed', String(glowOn)); };
+$('bglow').onclick = () => { glowOn = !glowOn; try { localStorage.setItem('wp-glow', glowOn ? '1' : '0'); } catch (e) {} paintBtnGlow(); if (!glowOn) stage.style.boxShadow = ''; };
+paintBtnGlow();
+function edgeColours() {
+  if (!cur || !cur.el || glowBlocked || cur.el.readyState < 2) return null;
+  try {
+    gctx.drawImage(cur.el, 0, 0, 4, 4); const d = gctx.getImageData(0, 0, 4, 4).data, px = (x, y) => (y * 4 + x) * 4;
+    const avg = (pts) => { let r = 0, g = 0, b = 0; pts.forEach(([x, y]) => { const i = px(x, y); r += d[i]; g += d[i + 1]; b += d[i + 2]; }); return [r / pts.length, g / pts.length, b / pts.length]; };
+    const col = (c) => [0, 1, 2, 3].map((i) => [c, i]), row = (rw) => [0, 1, 2, 3].map((i) => [i, rw]);
+    const [tr, tg, tb] = vibe.tint.split(',').map(Number), m = vibe.mix;
+    return [avg(col(0)), avg(col(3)), avg(row(0)), avg(row(3))].map(([r, g, b]) => {
+      const y = (r + g + b) / 3, k = (v) => Math.max(0, Math.min(255, y + (v - y) * 1.4)); // lift saturation a little
+      return `${Math.round(k(r) * (1 - m) + tr * m)},${Math.round(k(g) * (1 - m) + tg * m)},${Math.round(k(b) * (1 - m) + tb * m)}`;
+    });
+  } catch (e) { glowBlocked = true; return null; } // cross-origin video: pixels are not readable
+}
+setInterval(() => {
+  if (!glowOn || document.hidden || $('room').classList.contains('hidden') || fsEl()) return;
+  const e = edgeColours(), a = vibe.pow, sh = (c, x, y) => `${x}px ${y}px 110px -10px ${c}`;
+  let c;
+  if (e) c = e.map((v) => `rgba(${v},${a})`);
+  else { const t = vibeName === 'party' ? `hsla(${(hue = (hue + 14) % 360)},90%,60%,.4)` : `rgba(${vibe.tint},${vibeName === 'cinema' ? .18 : .32})`; c = [t, t, t, t]; }
+  stage.style.boxShadow = [sh(c[0], -40, 0), sh(c[1], 40, 0), sh(c[2], 0, -40), sh(c[3], 0, 40), '0 30px 80px rgba(0,0,0,.6)'].join(',');
+}, 500);
+
+// ---- stage chips: remote pass, BRB, movie night ----
+let brbList = [];
+socket.on('brb', (n) => { brbList = Array.isArray(n) ? n.map((x) => String(x).slice(0, 20)) : []; renderChips(); });
+$('brbbtn').onclick = () => { const me = roomInfo.users.find((u) => u.id === clientId); socket.emit('brb', !(me && me.brb)); };
+let showtimeShown = '';
+function renderChips() {
+  const box = $('chips'); box.textContent = '';
+  const add = (html, text) => { const d = document.createElement('div'); d.className = 'chip'; if (html) { const b = document.createElement('b'); b.textContent = html; d.append(b, document.createTextNode(' ' + text)); } else d.textContent = text; box.append(d); };
+  if (brbList.length) add(brbList.join(', '), 'will be back');
+  const holder = roomInfo.users.find((u) => u.remote);
+  if (holder) add(holder.name, 'has the remote' + (roomInfo.remoteUntil ? ' · ' + MMSS(roomInfo.remoteUntil - serverNow()) : ''));
+  const sc = roomInfo.schedule;
+  if (sc && sc.at > serverNow()) add(sc.title || 'Movie night', 'starts in ' + MMSS(sc.at - serverNow()));
+  else if (sc && sc.at > serverNow() - 15000 && showtimeShown !== String(sc.at)) { showtimeShown = String(sc.at); toast('Showtime! Host can start with the countdown.'); }
+}
+setInterval(() => { if (joined) renderChips(); }, 1000);
+function renderSchedForm() {
+  const sc = roomInfo.schedule; if (!isHost() || document.activeElement === $('schedat') || document.activeElement === $('schedtitle')) return;
+  $('schedtitle').value = sc ? sc.title : '';
+  if (sc) { const d = new Date(sc.at - new Date(sc.at).getTimezoneOffset() * 60000); $('schedat').value = d.toISOString().slice(0, 16); } else $('schedat').value = '';
+}
+$('saveschedule').onclick = () => { const v = $('schedat').value; if (!v) return toast('Pick a date and time.'); socket.emit('set-schedule', { title: $('schedtitle').value, at: new Date(v).getTime() }); toast('Movie night scheduled'); };
+$('clearschedule').onclick = () => socket.emit('set-schedule', { clear: true });
+
+// ---- reaction heatmap + timestamp notes on the seek bar ----
+let heat = {}, notes = [], lastT = null, heatDur = 0;
+const HEAT = { heart: '#ff375f', like: '#0a84ff', laugh: '#ffd60a', wow: '#ff9f0a', star: '#bf5af2' };
+function renderHeat() {
+  const el = $('sdots'), d = cur && custom ? cur.dur() : 0; el.textContent = ''; heatDur = d; if (!d) return;
+  Object.entries(heat).forEach(([b, h]) => {
+    const t = b * 10 + 5; if (t > d + 10) return;
+    const top = Object.entries(h.k).sort((x, y) => y[1] - x[1])[0][0], size = Math.min(13, 5 + h.n * 2), dot = document.createElement('i');
+    dot.style.cssText = `left:${Math.min(100, t / d * 100)}%;width:${size}px;height:${size}px;background:${HEAT[top] || '#fff'};color:${HEAT[top] || '#fff'}`; el.append(dot);
+  });
+}
+function renderMarks() {
+  const el = $('smarks'), d = cur && custom ? cur.dur() : 0; el.textContent = ''; if (!d) return;
+  notes.forEach((n) => { const m = document.createElement('i'); m.style.left = Math.min(100, n.t / d * 100) + '%'; el.append(m); });
+}
+socket.on('heat', (h) => { heat = h && typeof h === 'object' ? h : {}; renderHeat(); });
+socket.on('reaction', (d) => {
+  if (!d || !Number.isInteger(d.b) || !HEAT[d.key]) return;
+  const h = heat[d.b] || (heat[d.b] = { n: 0, k: {} }); h.n++; h.k[d.key] = (h.k[d.key] || 0) + 1; renderHeat();
+});
+socket.on('notes', (list) => { notes = Array.isArray(list) ? list : []; renderMarks(); renderNotes(); });
+setInterval(() => {
+  if (!cur || !custom) return;
+  const d = cur.dur() || 0; if (d && Math.abs(d - heatDur) > 1) { renderHeat(); renderMarks(); }
+  const t = cur.time(), pl = cur.playing();
+  if (pl && lastT !== null && t >= lastT && t - lastT < 2) notes.forEach((n) => { if (n.t > lastT && n.t <= t) showNote(n); }); // popup again every time playback passes the note
+  lastT = t;
+}, 250);
+let noteT;
+function showNote(n) {
+  const el = $('notepop'); el.textContent = ''; const s = document.createElement('small'); s.textContent = `${n.by} · ${fmt(n.t)}`; el.append(s, document.createTextNode(n.text));
+  el.classList.remove('hidden'); clearTimeout(noteT); noteT = setTimeout(() => el.classList.add('hidden'), 6000);
+}
+function renderNotes() {
+  const box = $('notelist'); box.textContent = '';
+  if (!notes.length) { const p = document.createElement('p'); p.className = 'hint'; p.textContent = 'No notes yet. Pinned notes pop up for everyone when the video reaches that second.'; box.append(p); return; }
+  notes.forEach((n) => {
+    const row = document.createElement('div'); row.className = 'panel-row'; const t = document.createElement('div'); t.className = 'qlabel';
+    t.textContent = `${fmt(n.t)} · ${n.text}`; const by = document.createElement('div'); by.className = 'qby'; by.textContent = n.by; t.append(by); row.append(t);
+    const go = document.createElement('button'); go.className = 'ghost'; go.textContent = 'Jump'; go.disabled = !canControl(); go.onclick = () => { userSeek(Math.max(0, n.t - 2)); $('notemodal').classList.add('hidden'); }; row.append(go);
+    if (n.mine || isHost()) { const rm = document.createElement('button'); rm.className = 'ghost'; rm.textContent = 'Remove'; rm.onclick = () => socket.emit('note-remove', { id: n.id }); row.append(rm); }
+    box.append(row);
+  });
+}
+$('bnote').onclick = () => { if (!cur) return; $('noteat').textContent = 'Note will be pinned at ' + fmt(cur.time()); renderNotes(); $('notemodal').classList.remove('hidden'); $('notein').focus(); };
+const pinNote = () => { const v = $('notein').value.trim(); if (!v || !socket.connected) return; socket.emit('note-add', v); $('notein').value = ''; $('noteat').textContent = 'Pinned at ' + fmt(cur ? cur.time() : 0); };
+$('noteadd').onclick = pinNote; $('notein').addEventListener('keydown', (e) => { if (e.key === 'Enter') pinNote(); });
+$('closenote').onclick = () => $('notemodal').classList.add('hidden');
+$('notemodal').onclick = (e) => { if (e.target === $('notemodal')) $('notemodal').classList.add('hidden'); };
+
+// ---- recap card ----
+let lastRecap = null;
+const dur2 = (s) => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h}h ${m}m` : m ? `${m}m` : 'under 1m'; };
+function recapText(r) {
+  const peak = r.laugh != null ? `the biggest laugh was at ${fmt(r.laugh)}` : r.any != null ? `the most reactions came at ${fmt(r.any)}` : '';
+  return `${r.friends} ${r.friends === 1 ? 'person' : 'friends'}, ${dur2(r.secs)} watched together, ${r.reacts} reactions${peak ? ', ' + peak : ''}.`;
+}
+socket.on('recap', (r) => {
+  if (!r || typeof r !== 'object') return; lastRecap = r;
+  $('rcname').textContent = r.title ? r.title + ' · recap' : 'Watch party recap';
+  $('rcfriends').textContent = `${r.friends} ${r.friends === 1 ? 'person' : 'friends'}`;
+  $('rctime').textContent = dur2(r.secs); $('rcreacts').textContent = r.reacts;
+  $('rcpeak').textContent = r.laugh != null ? `Biggest laugh at ${fmt(r.laugh)}` : r.any != null ? `Most reactions at ${fmt(r.any)}` : 'No reactions yet';
+  $('recapmodal').classList.remove('hidden');
+});
+$('recapbtn').onclick = () => socket.emit('recap-request');
+$('rcclose').onclick = () => $('recapmodal').classList.add('hidden');
+$('recapmodal').onclick = (e) => { if (e.target === $('recapmodal')) $('recapmodal').classList.add('hidden'); };
+$('rccopy').onclick = async () => { if (!lastRecap) return; try { await navigator.clipboard.writeText(recapText(lastRecap)); toast('Recap copied'); } catch (e) { toast('Could not copy'); } };
+$('rcimg').onclick = () => {
+  if (!lastRecap) return; const r = lastRecap, c = document.createElement('canvas'); c.width = c.height = 1080; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 1080, 1080); g.addColorStop(0, vibe.v1); g.addColorStop(1, vibe.v2); x.fillStyle = g; x.fillRect(0, 0, 1080, 1080);
+  x.textAlign = 'center'; x.fillStyle = '#98989f'; x.font = '600 38px Inter, system-ui, sans-serif'; x.fillText((r.title || 'Watch party') + ' · recap', 540, 200);
+  x.fillStyle = '#fff'; x.font = '700 120px Inter, system-ui, sans-serif'; x.fillText(`${r.friends} ${r.friends === 1 ? 'person' : 'friends'}`, 540, 380);
+  x.font = '600 56px Inter, system-ui, sans-serif'; x.fillText(dur2(r.secs) + ' together', 540, 520); x.fillText(r.reacts + ' reactions', 540, 610);
+  x.fillStyle = vibe.a; x.font = '600 48px Inter, system-ui, sans-serif';
+  x.fillText(r.laugh != null ? `Biggest laugh at ${fmt(r.laugh)}` : r.any != null ? `Most reactions at ${fmt(r.any)}` : '', 540, 760);
+  const a = document.createElement('a'); a.download = 'watch-party-recap.png'; a.href = c.toDataURL('image/png'); a.click();
+};
+
+// ---- invite page (scheduled movie night) ----
+(async () => {
+  const c = location.hash.length > 1 ? decodeURIComponent(location.hash.slice(1)).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) : ''; if (!c) return;
+  let inv; try { inv = await (await fetch('/api/invite/' + encodeURIComponent(c))).json(); } catch (e) { return; }
+  if (!inv || !inv.at) return;
+  const off = inv.serverTime - Date.now(); if (inv.at < inv.serverTime - 3 * 3600000) return;
+  $('invite').classList.remove('hidden'); $('invtitle').textContent = inv.title || inv.name || 'Movie night';
+  $('invwhen').textContent = new Date(inv.at).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  $('invinfo').textContent = (inv.count ? `${inv.count} already in the lobby. ` : '') + 'Join early to chat before the show starts.' + (inv.locked ? ' This room needs a password.' : '');
+  const tick = () => { const left = inv.at - (Date.now() + off); $('invcount').textContent = left > 0 ? 'Starts in ' + (left > 86400000 ? Math.floor(left / 86400000) + 'd ' : '') + MMSS(left % 86400000 || left) : 'Starting now'; };
+  tick(); setInterval(tick, 1000);
+  $('invcal').onclick = () => {
+    const st = (ms) => new Date(ms).toISOString().replace(/[-:]|\.\d{3}/g, ''), esc = (t) => String(t).replace(/[\\,;]/g, ' ').replace(/\n/g, ' ');
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//WatchParty//EN', 'BEGIN:VEVENT', `UID:${c}-${inv.at}@watchparty`, `DTSTAMP:${st(Date.now())}`, `DTSTART:${st(inv.at)}`, `DTEND:${st(inv.at + 7200000)}`,
+      `SUMMARY:${esc(inv.title || inv.name || 'Movie night')}`, `DESCRIPTION:Join here ${location.href}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' })); a.download = 'movie-night.ics'; a.click();
+  };
+})();
+document.addEventListener('visibilitychange', () => { if (document.hidden) return; clearUnread(); if (joined && socket.connected) socket.emit('resync'); });
+</script>
+</body>
+</html>
