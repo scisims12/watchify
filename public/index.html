@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Watch Party</title>
+<title>Watchify — Watch Together</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -59,6 +59,10 @@ h1{font-size:clamp(2.6rem,9vw,3.6rem);line-height:1.02;margin:0 0 .7rem;font-wei
 .card label{display:block;margin:1rem 0 .4rem;color:var(--dim);font-size:.85rem;padding-left:.4rem}
 .card .actions{margin-top:1.6rem;display:flex;gap:.6rem;flex-wrap:wrap}
 .card .actions button{flex:1 1 140px;white-space:nowrap}
+.developer-credit{margin:1.5rem 0 0;padding-top:1rem;border-top:1px solid var(--line);text-align:center;color:var(--dim);font-size:.76rem;letter-spacing:.01em}
+.developer-credit a{color:#b8caff;text-decoration:none;font-weight:600;transition:color .15s}
+.developer-credit a:hover{color:#fff;text-decoration:underline}
+.developer-credit a:focus-visible{outline:2px solid var(--blue);outline-offset:4px;border-radius:3px}
 
 #room{height:100%;display:grid;grid-template-columns:1fr 350px;grid-template-rows:auto 1fr;gap:14px;padding:14px}
 header{grid-column:1/-1;display:flex;align-items:center;gap:.7rem;padding:.6rem .8rem .6rem 1.2rem;border-radius:999px}
@@ -206,8 +210,8 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
 <section id="home">
   <div class="card glass">
     <div id="invite" class="invite hidden"><small>You are invited</small><h2 id="invtitle"></h2><div class="hint" id="invwhen"></div><div class="big" id="invcount"></div><div class="hint" id="invinfo"></div><button class="ghost" id="invcal" style="margin-top:.5rem">Add to calendar</button></div>
-    <h1>Watch together.</h1>
-    <p>Create a room, share the code, and everyone plays, pauses and seeks in perfect sync.</p>
+    <h1>Watchify.</h1>
+    <p>Movies are better together. Create a room, invite your friends, and enjoy every moment in sync.</p>
     <label for="name">Your name</label>
     <input id="name" type="text" maxlength="20" placeholder="e.g. Rahul" autocomplete="nickname">
     <label for="code">Room code</label>
@@ -218,12 +222,13 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
       <button id="join">Join room</button>
       <button id="create" class="ghost">Create new room</button>
     </div>
+    <div class="developer-credit">Developed by <a href="https://portfolio.mixify.co.in/" target="_blank" rel="noopener noreferrer" aria-label="Visit Priyanshu Sharma's portfolio">Priyanshu Sharma</a></div>
   </div>
 </section>
 
 <section id="room" class="hidden">
   <header class="glass">
-    <b id="roomtitle">Watch Party</b>
+    <b id="roomtitle">Watchify</b>
     <span class="code" id="roomcode"></span>
     <button class="ghost" id="invitebtn">Invite</button>
     <span class="sp"></span>
@@ -396,7 +401,7 @@ $('invitebtn').onclick = async () => {
 };
 $('shareinvite').onclick = async () => {
   if (!navigator.share) return;
-  try { await navigator.share({ title: 'Watch Party', text: 'Join my watch party!', url: location.origin + location.pathname + '#' + code }); }
+  try { await navigator.share({ title: 'Watchify', text: 'Join my Watchify watch party!', url: location.origin + location.pathname + '#' + code }); }
   catch (e) { if (e.name !== 'AbortError') toast('Could not share the invite.'); }
 };
 $('closeinvite').onclick = () => $('invitemodal').classList.add('hidden');
@@ -696,7 +701,7 @@ socket.on('room-info', (info) => {
   if (!isHost()) $('settingsmodal').classList.add('hidden');
 });
 function renderRoomMeta() {
-  const t = $('roomtitle'); t.textContent = roomInfo.name || 'Watch Party'; t.classList.toggle('named', !!roomInfo.name);
+  const t = $('roomtitle'); t.textContent = roomInfo.name || 'Watchify'; t.classList.toggle('named', !!roomInfo.name);
   $('chatmute').checked = !!roomInfo.chatMuted;
   if (document.activeElement !== $('roomname')) $('roomname').value = roomInfo.name || '';
   if (document.activeElement !== $('maxmembers')) $('maxmembers').value = roomInfo.maxMembers || '';
@@ -1005,7 +1010,7 @@ socket.on('typing', (d) => { if (d && typeof d.tid === 'string') setTyping(d.tid
 
 // unread badge: shows when the chat is scrolled out of view (mobile) or the tab is in the background
 let unread = 0, asideVisible = true;
-const pageTitle = () => (roomInfo.name ? roomInfo.name + ' · Watch Party' : 'Watch Party');
+const pageTitle = () => (roomInfo.name ? roomInfo.name + ' · Watchify' : 'Watchify');
 function paintUnread() {
   document.title = unread ? `(${unread}) ${pageTitle()}` : pageTitle();
   $('unread').textContent = unread === 1 ? '1 new message' : `${unread} new messages`;
