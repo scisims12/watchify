@@ -35,6 +35,22 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none}
 .host-actions{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}.host-actions button{font-size:.83rem;padding:.5rem .85rem}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:12;display:grid;place-items:center;padding:16px;padding-bottom:max(16px,env(safe-area-inset-bottom))}
 .panel{width:min(480px,100%);max-height:90dvh;overflow:auto;border-radius:28px;padding:1.3rem}.panel h2{margin:0 0 1rem;font-size:1.3rem}.panel h3{margin:1.3rem 0 .5rem;font-size:1rem}.panel input{margin:.4rem 0}.panel-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;margin:.6rem 0}.panel-row button{padding:.45rem .8rem;font-size:.82rem}.segments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.3rem;background:var(--glass2);padding:.25rem;border-radius:18px}.segments button{padding:.6rem .25rem;background:transparent;font-size:.8rem}.segments button.active{background:var(--blue)}.segments.v{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* Room settings: tidy glass sections and an independently scrolling mobile sheet. */
+.settings-panel{width:min(520px,100%);padding:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.settings-head{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:.7rem;padding:1.1rem 1.2rem;background:rgba(24,25,34,.94);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border-bottom:1px solid var(--line)}
+.settings-head h2{margin:0;font-size:1.25rem}.settings-content{display:grid;gap:.8rem;padding:1rem 1.1rem 1.3rem}
+.settings-card{min-width:0;padding:1rem;border-radius:21px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09)}
+.settings-card h3{display:flex;align-items:center;gap:.45rem;margin:0 0 .8rem;font-size:.93rem}.settings-card .hint{margin:.65rem 0 0;font-size:.78rem;line-height:1.45}
+.settings-card .panel-row{margin:.55rem 0}.settings-card input[type=text],.settings-card input[type=datetime-local]{margin:.35rem 0}
+.settings-card .segments button{min-height:40px}.settings-card .settings-primary{background:var(--blue);color:#fff;margin-top:.5rem}
+.vibe-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem}.vibe-grid button{display:flex;align-items:center;justify-content:flex-start;gap:.55rem;min-height:52px;padding:.65rem .8rem;border-radius:15px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);font-size:.83rem}
+.vibe-grid button .vibe-dot{width:14px;height:14px;flex:none;border-radius:50%;background:var(--tone);box-shadow:0 0 14px var(--tone)}
+.vibe-grid button.active{background:color-mix(in srgb,var(--tone) 22%,rgba(255,255,255,.06));border-color:var(--tone);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tone) 25%,transparent)}
+.settings-switch{display:flex;align-items:center;justify-content:space-between;gap:1rem;width:100%;cursor:pointer;font-weight:600;font-size:.88rem}
+.settings-switch input{position:absolute;opacity:0;width:1px;height:1px}.switch-track{flex:none;width:48px;height:28px;border-radius:30px;background:#555562;border:1px solid rgba(255,255,255,.2);padding:3px;transition:background .2s}
+.switch-track::after{content:'';display:block;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:transform .2s}.settings-switch input:checked+.switch-track{background:var(--blue)}.settings-switch input:checked+.switch-track::after{transform:translateX(20px)}.settings-switch input:focus-visible+.switch-track{outline:2px solid #fff;outline-offset:3px}
+.settings-card .schedule-status{padding:.5rem .7rem;border-radius:12px;background:rgba(48,209,88,.1);color:#8af0aa}
+@media(max-width:640px){.settings-panel{max-height:90dvh;border-radius:28px 28px 0 0;padding:0;padding-bottom:env(safe-area-inset-bottom)}.settings-panel::before{content:'';display:block;width:36px;height:5px;border-radius:6px;background:rgba(255,255,255,.28);margin:9px auto 0}.settings-head{padding:.8rem 1rem}.settings-content{padding:.85rem .85rem 1.3rem}.settings-card{padding:.9rem}}
 #countnumber{position:absolute;z-index:8;inset:0;display:grid;place-items:center;pointer-events:none;font-size:clamp(100px,20vw,190px);font-weight:700;color:white;text-shadow:0 12px 60px #000;animation:countpop .9s ease-out both}#countnumber span{background:rgba(40,40,46,.48);backdrop-filter:blur(25px);border:1px solid var(--line);border-radius:36px;min-width:1.5em;text-align:center}@keyframes countpop{from{opacity:.2;transform:scale(1.12)}to{opacity:1;transform:scale(1)}}
 
 #conn{position:fixed;top:max(.8rem,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:13;padding:.5rem 1rem;border-radius:999px;font-size:.88rem;font-weight:500;max-width:92vw;white-space:nowrap}
@@ -353,15 +369,17 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
 </div></div>
 <div id="conn" class="glass hidden" role="status"><i></i>Reconnecting…</div>
 <button id="unread" class="hidden" aria-live="polite">New messages</button>
-<div id="settingsmodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Room settings"><div class="panel glass">
- <div class="panel-row"><h2>Room settings</h2><button class="ghost" id="closesettings" aria-label="Close settings">Close</button></div>
- <h3>Who controls playback?</h3><div class="segments" role="group" aria-label="Control mode"><button data-mode="everyone">Everyone</button><button data-mode="host">Host only</button><button data-mode="ask">Ask host</button></div>
- <h3>Room vibe</h3><div class="segments v" role="group" aria-label="Room vibe"><button data-vibe="cinema">Cinema</button><button data-vibe="cozy">Cozy</button><button data-vibe="date">Date night</button><button data-vibe="party">Party</button></div>
- <h3>Movie night</h3><input id="schedtitle" type="text" maxlength="60" placeholder="Title, e.g. Saturday movie night" aria-label="Movie night title"><input id="schedat" type="datetime-local" aria-label="Start time"><div class="panel-row"><button id="saveschedule" class="ghost">Schedule</button><button id="clearschedule" class="ghost">Clear</button></div><p class="hint">Scheduled rooms stay open while empty, so friends can use the invite link and chat in the lobby before the start.</p>
- <h3>Room access</h3><div class="panel-row"><label><input id="roomlock" type="checkbox"> Lock room</label></div><input id="lockpassword" type="text" maxlength="64" placeholder="Password for new members" aria-label="Room password"><button id="savelock" class="ghost">Save access</button>
- <h3>Room</h3><input id="roomname" type="text" maxlength="40" placeholder="Room name (optional)" aria-label="Room name"><input id="maxmembers" type="text" inputmode="numeric" maxlength="2" placeholder="Max members (empty = no limit)" aria-label="Maximum members"><button id="saveroom" class="ghost">Save room</button>
- <h3>Chat</h3><div class="panel-row"><label><input id="chatmute" type="checkbox"> Mute chat for members</label><button class="ghost" id="clearchat">Clear chat</button></div>
- <h3>Members</h3><div class="panel-row"><label>Pass the remote for <select id="passmin" aria-label="Minutes"><option>5</option><option selected>10</option><option>20</option><option>30</option></select> min</label></div><div id="membertools"></div>
+<div id="settingsmodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Room settings"><div class="panel glass settings-panel">
+ <div class="settings-head"><h2>Room settings</h2><button class="ghost" id="closesettings" aria-label="Close settings">Close</button></div>
+ <div class="settings-content">
+  <section class="settings-card"><h3>🎮 Playback controls</h3><div class="segments" role="group" aria-label="Control mode"><button data-mode="everyone">Everyone</button><button data-mode="host">Host only</button><button data-mode="ask">Ask host</button></div><p class="hint">Choose who can play, pause and seek for everyone.</p></section>
+  <section class="settings-card"><h3>🎨 Room appearance</h3><div class="vibe-grid" role="group" aria-label="Room vibe"><button data-vibe="cinema" style="--tone:#448eff"><span class="vibe-dot"></span>Cinema</button><button data-vibe="cozy" style="--tone:#e8a54d"><span class="vibe-dot"></span>Cozy</button><button data-vibe="date" style="--tone:#ed68ae"><span class="vibe-dot"></span>Date night</button><button data-vibe="party" style="--tone:#bb56ed"><span class="vibe-dot"></span>Party</button></div></section>
+  <section class="settings-card"><h3>📅 Movie night</h3><input id="schedtitle" type="text" maxlength="60" placeholder="Title, e.g. Saturday movie night" aria-label="Movie night title"><input id="schedat" type="datetime-local" aria-label="Start time"><p id="schedstatus" class="hint schedule-status hidden" role="status"></p><div class="panel-row"><button id="saveschedule" class="settings-primary">Schedule movie night</button><button id="clearschedule" class="ghost hidden">Clear schedule</button></div><p class="hint">Friends can join early and chat in the lobby before the movie starts.</p></section>
+  <section class="settings-card"><h3>🔐 Privacy &amp; access</h3><label class="settings-switch"><span>Lock room</span><input id="roomlock" type="checkbox"><span class="switch-track" aria-hidden="true"></span></label><div id="lockfields" class="hidden"><input id="lockpassword" type="text" maxlength="64" placeholder="Password for new members" aria-label="Room password"><p class="hint">Enter a password to save a locked room.</p></div><button id="savelock" class="settings-primary">Save access</button></section>
+  <section class="settings-card"><h3>🏠 Room details</h3><input id="roomname" type="text" maxlength="40" placeholder="Room name (optional)" aria-label="Room name"><input id="maxmembers" type="text" inputmode="numeric" maxlength="2" placeholder="Max members (empty = no limit)" aria-label="Maximum members"><button id="saveroom" class="ghost">Save room</button></section>
+  <section class="settings-card"><h3>💬 Chat</h3><div class="panel-row"><label><input id="chatmute" type="checkbox"> Mute chat for members</label><button class="ghost" id="clearchat">Clear chat</button></div></section>
+  <section class="settings-card"><h3>👥 Members &amp; host</h3><div class="panel-row"><label>Pass the remote for <select id="passmin" aria-label="Minutes"><option>5</option><option selected>10</option><option>20</option><option>30</option></select> min</label></div><div id="membertools"></div></section>
+ </div>
  </div></div>
 <div id="queuemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Video queue"><div class="panel glass">
  <div class="panel-row"><h2>Up next</h2><button class="ghost" id="closequeue" aria-label="Close queue">Close</button></div>
@@ -746,6 +764,7 @@ socket.on('room-info', (info) => {
   roomInfo = info; updatePermissions(); renderUsers(); renderMemberTools(); renderRoomMeta(); renderQueue(); applyVibe(info.vibe); renderChips(); renderSchedForm();
   document.querySelectorAll('[data-mode]').forEach((b) => { b.classList.toggle('active', b.dataset.mode === info.mode); b.setAttribute('aria-pressed', String(b.dataset.mode === info.mode)); });
   $('roomlock').checked = info.locked;
+  updateLockFields();
   if (!isHost()) $('settingsmodal').classList.add('hidden');
 });
 function renderRoomMeta() {
@@ -762,9 +781,11 @@ $('saveroom').onclick = () => {
 $('chatmute').onchange = () => socket.emit('set-chat-muted', $('chatmute').checked);
 $('clearchat').onclick = () => { if (confirm('Clear the chat for everyone?')) socket.emit('clear-chat'); };
 document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => socket.emit('set-mode', b.dataset.mode));
-$('settings').onclick = () => $('settingsmodal').classList.remove('hidden');
+$('settings').onclick = () => { updateLockFields(); renderSchedForm(); $('settingsmodal').classList.remove('hidden'); };
 $('closesettings').onclick = () => $('settingsmodal').classList.add('hidden');
 $('settingsmodal').onclick = (e) => { if (e.target === $('settingsmodal')) $('settingsmodal').classList.add('hidden'); };
+function updateLockFields() { $('lockfields').classList.toggle('hidden', !$('roomlock').checked); }
+$('roomlock').onchange = updateLockFields;
 $('savelock').onclick = () => socket.emit('set-lock', { locked: $('roomlock').checked, password: $('lockpassword').value });
 $('requestremote').onclick = () => { socket.emit('request-remote'); toast('Request sent to host'); };
 let pendingRequest = null;
@@ -1237,7 +1258,11 @@ function renderChips() {
 }
 setInterval(() => { if (joined) renderChips(); }, 1000);
 function renderSchedForm() {
-  const sc = roomInfo.schedule; if (!isHost() || document.activeElement === $('schedat') || document.activeElement === $('schedtitle')) return;
+  const sc = roomInfo.schedule;
+  $('clearschedule').classList.toggle('hidden', !sc);
+  $('schedstatus').classList.toggle('hidden', !sc);
+  if (sc) $('schedstatus').textContent = `Scheduled: ${sc.title ? sc.title + ' · ' : ''}${new Date(sc.at).toLocaleString()}`;
+  if (!isHost() || document.activeElement === $('schedat') || document.activeElement === $('schedtitle')) return;
   $('schedtitle').value = sc ? sc.title : '';
   if (sc) { const d = new Date(sc.at - new Date(sc.at).getTimezoneOffset() * 60000); $('schedat').value = d.toISOString().slice(0, 16); } else $('schedat').value = '';
 }
