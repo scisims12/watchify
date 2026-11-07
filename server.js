@@ -181,7 +181,13 @@ app.post('/google-drive/disconnect', (req, res) => {
   const key = cookieValue(req, 'watchify_google');
   const auth = googleSessions.get(key);
   googleSessions.delete(key); googleCookie(res, req, '', 0);
-  for (const room of Object.values(rooms)) if (auth && room.googleDriveAuth === auth) { room.googleDriveAuth = null; room.driveToken = null; }
+  for (const room of Object.values(rooms)) {
+    if (!auth) break;
+    if (room.googleDriveAuth === auth) { room.googleDriveAuth = null; room.driveToken = null; }
+    const before = room.queue.length;
+    room.queue = room.queue.filter((item) => item.driveAuth !== auth);
+    if (room.queue.length !== before) sendQueue(room);
+  }
   res.json({ ok: true });
 });
 app.get('/google-drive/files', async (req, res) => {
@@ -608,6 +614,34 @@ app.post('/google-drive/play', express.json({ limit: '2kb' }), async (req, res) 
     res.json({ ok: true });
   } catch { res.status(502).json({ error: 'Google Drive could not open this file.' }); }
 });
+// Add a private Drive file to Up next without interrupting the current video.
+// OAuth credentials stay server-side and are not included in queue-info events.
+app.post('/google-drive/queue', express.json({ limit: '2kb' }), async (req, res) => {
+  if (!sameOrigin(req)) return res.status(403).end();
+  const auth = googleSession(req), id = req.body?.id, code = cleanCode(req.get('x-room-code'));
+  const socket = io.sockets.sockets.get(req.get('x-socket-id')), room = rooms[code];
+  if (!auth) return res.status(401).json({ error: 'Connect Google Drive first.' });
+  if (!DRIVE_ID.test(id || '') || !room || !socket || !room.members.has(socket.id) ||
+    socket.data.roomCode !== code || !host(socket, room))
+    return res.status(403).json({ error: 'Only the host can queue a private Drive file.' });
+  if (room.queue.length >= MAX_QUEUE) return res.status(409).json({ error: 'The queue is full.' });
+  try {
+    const upstream = await googleApi(auth, `files/${encodeURIComponent(id)}?fields=id,name,mimeType,size,capabilities(canDownload)`);
+    if (!upstream.ok) return res.status(422).json({ error: 'Cannot access this Drive video.' });
+    const file = await upstream.json();
+    if (file.id !== id || (!String(file.mimeType || '').startsWith('video/') && !/\.mkv$/i.test(file.name || '')) || file.capabilities?.canDownload === false)
+      return res.status(422).json({ error: 'Select a downloadable video file.' });
+    // Revalidate room and host after asynchronous Drive metadata lookup.
+    if (rooms[code] !== room || !room.members.has(socket.id) || socket.data.roomCode !== code ||
+      socket.data.clientId !== room.hostClientId || room.queue.length >= MAX_QUEUE)
+      return res.status(409).json({ error: 'Room or queue changed. Try again.' });
+    const video = { provider: 'drive', id, name: String(file.name || 'Google Drive video').slice(0, 120) };
+    room.queue.push({ id: newId(), video, label: videoLabel(video), by: socket.data.name, byId: socket.data.clientId, driveAuth: auth });
+    announce(room, `${socket.data.name} added ${video.name} to the queue`);
+    sendQueue(room);
+    res.json({ ok: true });
+  } catch { res.status(502).json({ error: 'Google Drive could not add this video.' }); }
+});
 function sendQueue(r) {
   io.to(r.code).emit('queue-info', { queue: r.queue.map((q) => ({ id: q.id, label: q.label, by: q.by })) });
   const h = memberSocket(r, r.hostClientId); // pending suggestions are only shown to the host
@@ -855,7 +889,8 @@ io.on('connection', (socket) => {
     const r = rooms[room], i = r.queue.findIndex((x) => x.id === data.id); if (i < 0) return;
     if (r.countdownAt) return deny(socket, 'Wait for the countdown to finish.');
     const [item] = r.queue.splice(i, 1);
-    setVideo(r, item.video, false); announce(r, `${socket.data.name} started ${item.label}`); sendQueue(r);
+    setVideo(r, item.video, false); if (item.driveAuth) r.googleDriveAuth = item.driveAuth;
+    announce(r, `${socket.data.name} started ${item.label}`); sendQueue(r);
   });
   // Reported by clients when a video finishes. The sequence number makes duplicate reports harmless.
   socket.on('video-ended', (data = {}) => {
@@ -863,7 +898,8 @@ io.on('connection', (socket) => {
     if (!allowed(socket, r) || !data || data.seq !== r.seq || !r.video) return;
     if (!r.queue.length) { if (r.recapSeq !== r.seq) { r.recapSeq = r.seq; io.to(room).emit('recap', recapOf(r)); } return; }
     const next = r.queue.shift();
-    setVideo(r, next.video, true); announce(r, `Up next: ${next.label}`); sendQueue(r);
+    setVideo(r, next.video, true); if (next.driveAuth) r.googleDriveAuth = next.driveAuth;
+    announce(r, `Up next: ${next.label}`); sendQueue(r);
   });
   socket.on('buffering', (on) => {
     if (!room || typeof on !== 'boolean') return;
