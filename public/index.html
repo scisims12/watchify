@@ -219,7 +219,8 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
  .ctrl .ib{width:30px;height:32px}
  .ctrl .ib svg{width:19px;height:19px}
  #bmore{display:grid;font-size:1.3rem;line-height:1}
- .more-tools{display:none;position:absolute;right:5px;bottom:calc(100% + 7px);z-index:6;width:min(210px,calc(100vw - 42px));padding:8px;grid-template-columns:1fr 1fr;gap:5px;border-radius:16px;background:rgba(24,25,33,.97);border:1px solid rgba(255,255,255,.18);box-shadow:0 14px 38px rgba(0,0,0,.65)}
+ .more-tools{display:none;position:absolute;right:5px;bottom:calc(100% + 7px);z-index:6;width:min(220px,calc(100vw - 42px));max-height:180px;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y;align-content:start;padding:8px;grid-template-columns:1fr 1fr;gap:5px;border-radius:16px;background:rgba(24,25,33,.97);border:1px solid rgba(255,255,255,.18);box-shadow:0 14px 38px rgba(0,0,0,.65);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.35) transparent}
+ .more-tools::-webkit-scrollbar{width:4px}.more-tools::-webkit-scrollbar-thumb{background:rgba(255,255,255,.35);border-radius:10px}
  .ctrl.more-open .more-tools{display:grid}
  .more-tools .ib,.more-tools .ib.txt{width:100%;min-height:38px;height:auto;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.08);font-size:.8rem}
  .more-tools .audio-language{grid-column:1/-1;width:100%;padding:6px 4px}
@@ -837,6 +838,12 @@ function wake() {
 function closePlayerMore() { ctrlEl.classList.remove('more-open'); $('bmore').setAttribute('aria-expanded', 'false'); }
 $('bmore').onclick = () => {
   const open = !ctrlEl.classList.contains('more-open');
+  if (open) {
+    // The movie stage clips overlays: never let the menu extend above its top.
+    const available = Math.floor(ctrlEl.getBoundingClientRect().top - stage.getBoundingClientRect().top - 16);
+    $('moretools').style.maxHeight = Math.max(65, Math.min(210, available)) + 'px';
+    $('moretools').scrollTop = 0;
+  }
   ctrlEl.classList.toggle('more-open', open);
   $('bmore').setAttribute('aria-expanded', String(open));
   wake();
