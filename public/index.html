@@ -50,6 +50,19 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none}
 .settings-switch input{position:absolute;opacity:0;width:1px;height:1px}.switch-track{flex:none;width:48px;height:28px;border-radius:30px;background:#555562;border:1px solid rgba(255,255,255,.2);padding:3px;transition:background .2s}
 .switch-track::after{content:'';display:block;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:transform .2s}.settings-switch input:checked+.switch-track{background:var(--blue)}.settings-switch input:checked+.switch-track::after{transform:translateX(20px)}.settings-switch input:focus-visible+.switch-track{outline:2px solid #fff;outline-offset:3px}
 .settings-card .schedule-status{padding:.5rem .7rem;border-radius:12px;background:rgba(48,209,88,.1);color:#8af0aa}
+.settings-field{display:block;margin:.75rem 0 .25rem;color:#c7c7d2;font-size:.79rem;font-weight:600}
+.settings-card .settings-help{margin:.45rem 0 .6rem;color:var(--dim);font-size:.76rem;line-height:1.45}
+.settings-danger{background:rgba(255,69,58,.1)!important;color:#ff8982!important;border:1px solid rgba(255,69,58,.28)!important}
+.settings-danger:hover{background:rgba(255,69,58,.22)!important}
+.settings-chat-actions{display:flex;justify-content:flex-end;margin-top:.9rem}
+.remote-duration{display:flex;align-items:center;justify-content:space-between;gap:.7rem;padding:.65rem .8rem;border-radius:14px;background:rgba(255,255,255,.05);color:#d7d7e0;font-size:.84rem}
+.remote-duration select{width:auto;min-width:112px;padding:.4rem .8rem;border:1px solid var(--line);background:#30303a;color:#fff}
+.member-list{display:grid;gap:.55rem;margin-top:.85rem}
+.member-card{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;min-width:0;padding:.65rem .7rem;border-radius:15px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
+.member-avatar{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,#2878ee,#a851d9);color:#fff;font-size:.8rem;font-weight:800}
+.member-identity{display:flex;flex:1 1 100px;align-items:flex-start;flex-direction:column;min-width:0;gap:2px}.member-name{max-width:100%;overflow-wrap:anywhere;font-size:.84rem;font-weight:600}.member-role{font-size:.68rem;color:#91baff}
+.member-manage{position:relative;flex:none}.member-manage>summary{list-style:none;cursor:pointer;padding:.42rem .75rem;border-radius:99px;background:rgba(255,255,255,.1);font-size:.78rem;font-weight:600}.member-manage>summary::-webkit-details-marker{display:none}
+.member-manage[open]{width:100%}.member-manage[open]>summary{width:max-content;margin-left:auto}.member-actions{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.65rem}.member-actions button{flex:1 1 95px;min-height:37px;padding:.45rem .6rem;font-size:.75rem}
 @media(max-width:640px){.settings-panel{max-height:90dvh;border-radius:28px 28px 0 0;padding:0;padding-bottom:env(safe-area-inset-bottom)}.settings-panel::before{content:'';display:block;width:36px;height:5px;border-radius:6px;background:rgba(255,255,255,.28);margin:9px auto 0}.settings-head{padding:.8rem 1rem}.settings-content{padding:.85rem .85rem 1.3rem}.settings-card{padding:.9rem}}
 #countnumber{position:absolute;z-index:8;inset:0;display:grid;place-items:center;pointer-events:none;font-size:clamp(100px,20vw,190px);font-weight:700;color:white;text-shadow:0 12px 60px #000;animation:countpop .9s ease-out both}#countnumber span{background:rgba(40,40,46,.48);backdrop-filter:blur(25px);border:1px solid var(--line);border-radius:36px;min-width:1.5em;text-align:center}@keyframes countpop{from{opacity:.2;transform:scale(1.12)}to{opacity:1;transform:scale(1)}}
 
@@ -376,9 +389,9 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
   <section class="settings-card"><h3>🎨 Room appearance</h3><div class="vibe-grid" role="group" aria-label="Room vibe"><button data-vibe="cinema" style="--tone:#448eff"><span class="vibe-dot"></span>Cinema</button><button data-vibe="cozy" style="--tone:#e8a54d"><span class="vibe-dot"></span>Cozy</button><button data-vibe="date" style="--tone:#ed68ae"><span class="vibe-dot"></span>Date night</button><button data-vibe="party" style="--tone:#bb56ed"><span class="vibe-dot"></span>Party</button></div></section>
   <section class="settings-card"><h3>📅 Movie night</h3><input id="schedtitle" type="text" maxlength="60" placeholder="Title, e.g. Saturday movie night" aria-label="Movie night title"><input id="schedat" type="datetime-local" aria-label="Start time"><p id="schedstatus" class="hint schedule-status hidden" role="status"></p><div class="panel-row"><button id="saveschedule" class="settings-primary">Schedule movie night</button><button id="clearschedule" class="ghost hidden">Clear schedule</button></div><p class="hint">Friends can join early and chat in the lobby before the movie starts.</p></section>
   <section class="settings-card"><h3>🔐 Privacy &amp; access</h3><label class="settings-switch"><span>Lock room</span><input id="roomlock" type="checkbox"><span class="switch-track" aria-hidden="true"></span></label><div id="lockfields" class="hidden"><input id="lockpassword" type="text" maxlength="64" placeholder="Password for new members" aria-label="Room password"><p class="hint">Enter a password to save a locked room.</p></div><button id="savelock" class="settings-primary">Save access</button></section>
-  <section class="settings-card"><h3>🏠 Room details</h3><input id="roomname" type="text" maxlength="40" placeholder="Room name (optional)" aria-label="Room name"><input id="maxmembers" type="text" inputmode="numeric" maxlength="2" placeholder="Max members (empty = no limit)" aria-label="Maximum members"><button id="saveroom" class="ghost">Save room</button></section>
-  <section class="settings-card"><h3>💬 Chat</h3><div class="panel-row"><label><input id="chatmute" type="checkbox"> Mute chat for members</label><button class="ghost" id="clearchat">Clear chat</button></div></section>
-  <section class="settings-card"><h3>👥 Members &amp; host</h3><div class="panel-row"><label>Pass the remote for <select id="passmin" aria-label="Minutes"><option>5</option><option selected>10</option><option>20</option><option>30</option></select> min</label></div><div id="membertools"></div></section>
+  <section class="settings-card"><h3>🏠 Room details</h3><label class="settings-field" for="roomname">Room name</label><input id="roomname" type="text" maxlength="40" placeholder="Give this room a name (optional)" aria-label="Room name"><label class="settings-field" for="maxmembers">Member limit</label><input id="maxmembers" type="text" inputmode="numeric" maxlength="2" placeholder="No limit" aria-label="Maximum members"><p class="settings-help">Leave empty for the default room limit.</p><button id="saveroom" class="settings-primary">Save room details</button></section>
+  <section class="settings-card"><h3>💬 Chat settings</h3><label class="settings-switch"><span>Mute chat for members</span><input id="chatmute" type="checkbox"><span class="switch-track" aria-hidden="true"></span></label><p class="settings-help">Members can still watch together while the room chat is muted.</p><div class="settings-chat-actions"><button class="settings-danger" id="clearchat">Clear all chat</button></div></section>
+  <section class="settings-card"><h3>👥 Members &amp; host</h3><div class="remote-duration"><label for="passmin">Pass remote duration</label><select id="passmin" aria-label="Minutes"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div><div id="membertools" class="member-list"></div></section>
  </div>
  </div></div>
 <div id="queuemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Video queue"><div class="panel glass">
@@ -745,18 +758,26 @@ function renderUsers() {
 function renderMemberTools() {
   const el = $('membertools'); el.textContent = '';
   roomInfo.users.forEach((m) => {
-    const row = document.createElement('div'); row.className = 'panel-row';
-    const name = document.createElement('span'); name.textContent = m.name + (m.host ? ' · Host' : m.remote ? ' · Remote' : ''); row.append(name);
+    const row = document.createElement('div'); row.className = 'member-card';
+    const avatar = document.createElement('div'); avatar.className = 'member-avatar'; avatar.setAttribute('aria-hidden', 'true');
+    avatar.textContent = String(m.name || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase(); row.append(avatar);
+    const identity = document.createElement('div'); identity.className = 'member-identity';
+    const name = document.createElement('span'); name.className = 'member-name'; name.textContent = m.name;
+    const role = document.createElement('span'); role.className = 'member-role'; role.textContent = m.host ? 'Host' : m.remote ? 'Remote control' : 'Member';
+    identity.append(name, role); row.append(identity);
     if (!m.host) {
-      const actions = document.createElement('div'); actions.className = 'host-actions';
+      const manage = document.createElement('details'); manage.className = 'member-manage';
+      const summary = document.createElement('summary'); summary.textContent = 'Manage'; summary.setAttribute('aria-label', `Manage ${m.name}`); manage.append(summary);
+      const actions = document.createElement('div'); actions.className = 'member-actions';
       const choices = [['host', 'Make host'], ['kick', 'Remove'], [m.remote ? 'revoke' : 'remote', m.remote ? 'Take remote' : 'Give remote']];
       if (roomInfo.mode !== 'everyone' && !m.remote) choices.push(['pass', 'Pass remote']);
       choices.forEach(([action, label]) => { if ((action === 'remote' || action === 'revoke') && roomInfo.mode !== 'ask') return;
-        if (action === 'pass') { const b = document.createElement('button'); b.className = 'ghost'; b.textContent = label; b.onclick = () => socket.emit('pass-remote', { id: m.id, minutes: Number($('passmin').value) }); actions.append(b); return; }
+        if (action === 'pass') { const b = document.createElement('button'); b.className = 'ghost'; b.textContent = label; b.onclick = () => { socket.emit('pass-remote', { id: m.id, minutes: Number($('passmin').value) }); manage.open = false; }; actions.append(b); return; }
         const btn = document.createElement('button'); btn.className = 'ghost'; btn.textContent = label; btn.onclick = () => {
           if ((action === 'kick' || action === 'host') && !confirm(`${label} ${m.name}?`)) return;
-          socket.emit('member-action', { id: m.id, action });
-        }; actions.append(btn); }); row.append(actions);
+          socket.emit('member-action', { id: m.id, action }); manage.open = false;
+        }; if (action === 'kick') btn.classList.add('settings-danger'); actions.append(btn); });
+      manage.append(actions); row.append(manage);
     } el.append(row);
   });
 }
