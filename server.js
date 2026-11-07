@@ -292,6 +292,44 @@ app.get('/drive/:id', async (req, res) => {
 // even when no playable audio packets arrive.
 const AUDIO_JOBS_LIMIT = Math.max(1, Math.min(4, Number(process.env.MAX_AUDIO_JOBS) || 2));
 const audioJobs = new Set();
+let activeAudioProbes = 0;
+// Read-only track discovery, cached per room/movie. Never expose upstream URLs or credentials.
+app.get('/drive-audio-tracks/:id', async (req, res) => {
+  const id = req.params.id, room = rooms[cleanCode(req.query.room)], token = String(req.query.token || '');
+  if (!DRIVE_ID.test(id) || !room || !room.driveToken || room.video?.driveId !== id ||
+    !/^[a-f0-9]{64}$/.test(token) || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(room.driveToken)))
+    return res.status(403).json({ error: 'Not an active Drive movie.' });
+  res.set('Cache-Control', 'private, no-store');
+  if (room.audioTracks) return res.json({ tracks: room.audioTracks });
+  if (activeAudioProbes >= 3) return res.status(503).json({ error: 'Track discovery is busy.' });
+  const port = server.address()?.port;
+  if (!port) return res.status(503).end();
+  const input = `http://127.0.0.1:${port}/drive/${encodeURIComponent(id)}?room=${room.code}&token=${room.driveToken}`;
+  activeAudioProbes++;
+  try {
+    const tracks = await new Promise((resolve, reject) => {
+      execFile(process.env.FFPROBE_PATH || 'ffprobe', [
+        '-v', 'error', '-analyzeduration', '15M', '-probesize', '15M',
+        '-select_streams', 'a', '-show_entries', 'stream=index,codec_name,channels:stream_tags=language,title',
+        '-of', 'json', input
+      ], { timeout: 25000, maxBuffer: 65536, windowsHide: true }, (error, stdout) => {
+        if (error) return reject(error);
+        try {
+          const streams = JSON.parse(stdout).streams || [];
+          resolve(streams.slice(0, 32).map((stream, position) => ({
+            id: position, language: String(stream.tags?.language || 'und').slice(0, 16),
+            title: String(stream.tags?.title || '').slice(0, 80),
+            codec: String(stream.codec_name || '').slice(0, 24), channels: Number(stream.channels) || 0
+          })));
+        } catch (e) { reject(e); }
+      });
+    });
+    if (rooms[room.code] === room && room.video?.driveId === id) room.audioTracks = tracks;
+    res.json({ tracks });
+  } catch (e) {
+    res.status(503).json({ error: 'Could not inspect audio tracks. Check FFprobe on the server.' });
+  } finally { activeAudioProbes--; }
+});
 app.get('/drive-audio/:id', (req, res) => {
   const id = req.params.id, room = rooms[cleanCode(req.query.room)], token = String(req.query.token || '');
   if (!DRIVE_ID.test(id) || !room || !room.driveToken || room.video?.driveId !== id ||
@@ -299,13 +337,16 @@ app.get('/drive-audio/:id', (req, res) => {
     return res.status(403).json({ error: 'Audio stream is not part of an active room.' });
   const offset = Number(req.query.start || 0);
   if (!Number.isFinite(offset) || offset < 0 || offset > 86400) return res.status(400).end();
+  const track = Number(req.query.track ?? 0);
+  if (!Number.isSafeInteger(track) || track < 0 || track > 31 ||
+    (room.audioTracks && track >= room.audioTracks.length)) return res.status(400).json({ error: 'Invalid audio track.' });
   if (audioJobs.size >= AUDIO_JOBS_LIMIT) return res.status(503).json({ error: 'Audio conversion is busy. Try again.' });
   const port = server.address()?.port;
   if (!port) return res.status(503).end();
   const input = `http://127.0.0.1:${port}/drive/${encodeURIComponent(id)}?room=${room.code}&token=${room.driveToken}`;
   const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin',
     '-analyzeduration', '15M', '-probesize', '15M', '-ss', offset.toFixed(3), '-i', input,
-    '-map', '0:a:0', '-vn', '-sn', '-dn', '-c:a', 'libmp3lame', '-b:a', '160k',
+    '-map', `0:a:${track}`, '-vn', '-sn', '-dn', '-c:a', 'libmp3lame', '-b:a', '160k',
     '-ac', '2', '-ar', '44100', '-f', 'mp3', 'pipe:1'];
   const proc = spawn(process.env.FFMPEG_PATH || 'ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   audioJobs.add(proc);
@@ -538,6 +579,7 @@ function setVideo(r, video, play) {
   r.googleDriveAuth = null;
   if (r.subtitle) { fs.promises.unlink(path.join(UP, r.subtitle)).catch(console.error); r.subtitle = null; r.uploadBytes -= r.subtitleBytes; totalUploadBytes -= r.subtitleBytes; r.subtitleBytes = 0; io.to(r.code).emit('subtitle', null); }
   r.driveToken = video.provider === 'drive' ? crypto.randomBytes(32).toString('hex') : null;
+  r.audioTracks = null;
   r.video = video.provider === 'drive' ? { provider: 'html5', driveId: video.id, name: video.name || 'Google Drive video', url: `/drive/${video.id}?room=${r.code}&token=${r.driveToken}` } : video;
   r.playing = !!play && !r.brb.size; r.brbPaused = !!play && r.brb.size > 0; r.time = 0; r.at = Date.now(); r.seq++;
   r.notes = []; r.heat = {};
