@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Dosto ke saath sync mein video dekho: rooms, chat, upload",
   "main": "server.js",
+  "engines": { "node": ">=20" },
   "scripts": { "start": "node server.js" },
   "dependencies": {
     "express": "^4.21.0",

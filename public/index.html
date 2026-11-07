@@ -191,6 +191,11 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
 }
 @media(pointer:coarse) and (max-width:860px){.ib{width:34px;height:38px}.ib.txt{width:auto}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.qrbox{width:216px;height:216px;margin:1rem auto;background:#fff;padding:8px;border-radius:16px;display:grid;place-items:center}.qrbox img,.qrbox canvas{max-width:100%}
+.invite-link{font-size:.85rem;overflow-wrap:anywhere;text-align:center;color:var(--dim)}
+.stage video::cue{font-size:var(--subtitle-size,100%);background:rgba(0,0,0,.68);color:#fff}
+#bcc.active{color:#64b5ff}
+@media(max-width:640px){.ctrl .row{overflow-x:auto;scrollbar-width:none}.ctrl .row::-webkit-scrollbar{display:none}.ctrl .row .sp{min-width:2px}.qrbox{width:200px;height:200px}}
 </style>
 </head>
 <body>
@@ -217,7 +222,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
   <header class="glass">
     <b id="roomtitle">Watch Party</b>
     <span class="code" id="roomcode"></span>
-    <button class="ghost" id="copy">Copy invite link</button>
+    <button class="ghost" id="invitebtn">Invite</button>
     <span class="sp"></span>
     <button class="ghost" id="brbbtn">BRB</button>
     <button class="ghost" id="recapbtn">Recap</button>
@@ -253,6 +258,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
             <input type="range" id="vol" min="0" max="1" step="0.02" value="1" aria-label="Volume">
             <button class="ib txt" id="bnote" aria-label="Add a note at this moment">Note</button>
             <button class="ib txt" id="bglow" aria-label="Ambient glow">Glow</button>
+            <button class="ib" id="bcc" aria-label="Subtitles" title="Subtitles"></button>
             <button class="ib txt" id="bspeed" aria-label="Playback speed">1×</button>
             <button class="ib hidden" id="bpip" aria-label="Picture in picture"></button>
             <button class="ib" id="bfs" aria-label="Fullscreen"></button>
@@ -283,6 +289,20 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
 </section>
 
 <div id="toast" class="glass hidden"></div>
+<div id="invitemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Invite friends"><div class="panel glass">
+ <div class="panel-row"><h2>Invite friends</h2><button id="closeinvite" class="ghost">Close</button></div>
+ <div class="qrbox" id="inviteqr" aria-label="QR code for room invitation"></div>
+ <p class="invite-link" id="invitelink"></p>
+ <div class="panel-row"><button id="copy">Copy link</button><button id="shareinvite" class="ghost hidden">Share</button></div>
+</div></div>
+<div id="subtitlemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Subtitles"><div class="panel glass">
+ <div class="panel-row"><h2>Subtitles</h2><button id="closesubtitle" class="ghost">Close</button></div>
+ <p class="hint" id="subtitlelabel">No subtitles added</p>
+ <div class="panel-row"><button id="subtitleon">On</button><button id="subtitleoff" class="ghost">Off</button><button id="picksubtitle" class="ghost">Upload .srt / .vtt</button></div>
+ <input id="subtitlefile" type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" class="hidden">
+ <h3>Subtitle size</h3><div class="segments" role="group" aria-label="Subtitle size"><button data-subsize="small">Small</button><button data-subsize="medium">Medium</button><button data-subsize="large">Large</button></div>
+ <p class="hint">Subtitles are available for HTML5 and uploaded videos. YouTube and Vimeo manage their own captions.</p>
+</div></div>
 <div id="conn" class="glass hidden" role="status"><i></i>Reconnecting…</div>
 <button id="unread" class="hidden" aria-live="polite">New messages</button>
 <div id="settingsmodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Room settings"><div class="panel glass">
@@ -326,7 +346,7 @@ catch (e) { clientId = newClientId(); }
 const isHost = () => roomInfo.hostId === clientId;
 const canControl = () => roomInfo.mode === 'everyone' || isHost() || (roomInfo.mode === 'ask' && roomInfo.remoteId === clientId);
 
-const rand = () => Array.from({length: 5}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add('hidden'), 4000); }
 const scripts = {};
 const loadScript = (src) => scripts[src] || (scripts[src] = new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('load ' + src)); document.head.append(s); }));
@@ -336,22 +356,39 @@ const addMedia = (el) => stage.insertBefore(el, $('ui'));
 // ---- join ----
 try { $('name').value = localStorage.getItem('wp-name') || ''; } catch (e) {}
 if (location.hash.length > 1) $('code').value = decodeURIComponent(location.hash.slice(1));
-function enter(c) {
+function enter(c, create = false) {
   const name = $('name').value.trim() || 'Guest';
   c = c.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!c) return toast('Enter a room code or create a new room.');
   try { localStorage.setItem('wp-name', name); } catch (e) {}
   code = c.slice(0, 12);
   $('joinerror').classList.add('hidden');
-  socket.emit('join', { code, user: name, clientId, password: $('password').value });
+  socket.emit('join', { code, user: name, clientId, password: $('password').value, create });
 }
 $('join').onclick = () => enter($('code').value);
-$('create').onclick = () => enter(rand());
+$('create').onclick = () => enter(rand(), true);
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') enter($('code').value); });
 $('copy').onclick = async () => {
-  try { await navigator.clipboard.writeText(location.href); toast('Invite link copied'); }
+  try { await navigator.clipboard.writeText(location.origin + location.pathname + '#' + code); toast('Invite link copied'); }
   catch (e) { toast('Copy the link from the address bar'); }
 };
+$('invitebtn').onclick = async () => {
+  const link = location.origin + location.pathname + '#' + code;
+  $('invitelink').textContent = link; $('inviteqr').textContent = '';
+  $('shareinvite').classList.toggle('hidden', !navigator.share);
+  $('invitemodal').classList.remove('hidden');
+  try {
+    await loadScript('https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js');
+    if (!$('invitemodal').classList.contains('hidden')) new QRCode($('inviteqr'), { text: link, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+  } catch (e) { $('inviteqr').textContent = 'QR code unavailable. Use Copy link.'; toast('Could not load the QR code.'); }
+};
+$('shareinvite').onclick = async () => {
+  if (!navigator.share) return;
+  try { await navigator.share({ title: 'Watch Party', text: 'Join my watch party!', url: location.origin + location.pathname + '#' + code }); }
+  catch (e) { if (e.name !== 'AbortError') toast('Could not share the invite.'); }
+};
+$('closeinvite').onclick = () => $('invitemodal').classList.add('hidden');
+$('invitemodal').onclick = (e) => { if (e.target === $('invitemodal')) $('invitemodal').classList.add('hidden'); };
 
 // ---- players: each returns { time, playing, seek, play, pause, destroy, ready } ----
 const onLocal = (playing, time) => { if (!applying && canControl() && socket.connected) socket.emit('control', { playing, time }); };
@@ -361,6 +398,7 @@ const onEnded = () => { if (joined && canControl() && socket.connected) socket.e
 function mountHtml5(url) {
   const el = document.createElement('video');
   el.controls = false; el.playsInline = true; el.preload = 'metadata'; addMedia(el);
+  if (subtitleInfo) attachSubtitle(el);
   let buf = true;
   el.addEventListener('waiting', () => (buf = true));
   el.addEventListener('playing', () => (buf = false));
@@ -435,14 +473,39 @@ function mountVimeo(id) {
 
 const mount = (v) => v.provider === 'youtube' ? mountYouTube(v.id) : v.provider === 'vimeo' ? mountVimeo(v.id) : mountHtml5(v.url);
 
+let subtitleInfo = null, subtitleEnabled = true, subtitleSize = 'medium';
+try { subtitleSize = localStorage.getItem('wp-subsize') || 'medium'; subtitleEnabled = localStorage.getItem('wp-subtitles') !== 'off'; } catch (e) {}
+if (!['small','medium','large'].includes(subtitleSize)) subtitleSize = 'medium';
+function attachSubtitle(el) {
+  el.querySelectorAll('track').forEach((t) => t.remove());
+  if (!subtitleInfo || !subtitleInfo.url) return;
+  const track = document.createElement('track'); track.kind = 'subtitles'; track.srclang = 'en'; track.label = subtitleInfo.name || 'Subtitles'; track.src = subtitleInfo.url;
+  track.addEventListener('load', () => { if (track.track) track.track.mode = subtitleEnabled ? 'showing' : 'disabled'; });
+  el.append(track); track.track.mode = subtitleEnabled ? 'showing' : 'disabled';
+  el.style.setProperty('--subtitle-size', { small: '80%', medium: '100%', large: '140%' }[subtitleSize]);
+}
+function updateSubtitles() {
+  if (cur && cur.el) attachSubtitle(cur.el);
+  $('bcc').classList.toggle('active', !!subtitleInfo && subtitleEnabled);
+  $('subtitlelabel').textContent = subtitleInfo ? 'Available: ' + (subtitleInfo.name || 'Room subtitles') : 'No subtitles added';
+  $('picksubtitle').disabled = !joined || !canControl() || !cur || !cur.el;
+  [['subtitleon', subtitleEnabled], ['subtitleoff', !subtitleEnabled]].forEach(([id, selected]) => {
+    $(id).classList.toggle('ghost', !selected);
+    $(id).setAttribute('aria-pressed', String(selected));
+  });
+  document.querySelectorAll('[data-subsize]').forEach((b) => b.classList.toggle('active', b.dataset.subsize === subtitleSize));
+}
+socket.on('subtitle', (info) => { subtitleInfo = info; updateSubtitles(); });
+
 async function apply(s) {
   applying = true; if (Number.isFinite(s.seq)) curSeq = s.seq;
   try {
     if (s.video) {
       const key = JSON.stringify(s.video);
       if (key !== curKey) {
-        curKey = key; bufSince = bufSent = 0; lastT = null; glowBlocked = false; cur && cur.destroy(); $('empty').classList.add('hidden');
+        curKey = key; subtitleInfo = null; bufSince = bufSent = 0; lastT = null; glowBlocked = false; cur && cur.destroy(); $('empty').classList.add('hidden');
         cur = mount(s.video); setupUI(s.video); await cur.ready;
+        updateSubtitles();
         if (custom) applyAudio();
       }
     }
@@ -455,9 +518,9 @@ async function apply(s) {
 }
 socket.on('state', apply);
 $('resync').onclick = () => socket.emit('resync');
-socket.on('connect', () => { if (code) { joined = false; socket.emit('join', { code, user: $('name').value.trim() || 'Guest', clientId, password: $('password').value }); } syncClock(); });
+socket.on('connect', () => { if (code) { joined = false; socket.emit('join', { code, user: $('name').value.trim() || 'Guest', clientId, password: $('password').value, create: false }); } syncClock(); });
 socket.on('joined', () => { joined = true; location.hash = code; $('roomcode').textContent = code; $('home').classList.add('hidden'); $('room').classList.remove('hidden'); });
-socket.on('join-error', (msg) => { joined = false; code = ''; $('room').classList.add('hidden'); $('home').classList.remove('hidden'); $('joinerror').textContent = msg; $('joinerror').classList.remove('hidden'); toast(msg); });
+socket.on('join-error', (msg) => { const wasInRoom = !$('room').classList.contains('hidden'); joined = false; code = ''; if (wasInRoom && msg.startsWith('Room not found.')) { alert('This party has ended.'); location.hash = ''; location.reload(); return; } $('room').classList.add('hidden'); $('home').classList.remove('hidden'); $('joinerror').textContent = msg; $('joinerror').classList.remove('hidden'); toast(msg); });
 socket.on('not-allowed', toast);
 socket.on('remote-result', toast);
 socket.on('kicked', () => { code = ''; joined = false; $('settingsmodal').classList.add('hidden'); $('readymodal').classList.add('hidden'); $('kickmodal').classList.remove('hidden'); });
@@ -485,6 +548,7 @@ function updatePermissions() {
   $('requestremote').classList.toggle('hidden', isHost() || roomInfo.mode !== 'ask' || permitted);
   $('settings').classList.toggle('hidden', !isHost());
   $('readylaunch').classList.toggle('hidden', !isHost());
+  updateSubtitles();
   const me = roomInfo.users.find((u) => u.id === clientId);
   $('brbbtn').textContent = me && me.brb ? "I'm back" : 'BRB';
 }
@@ -577,6 +641,7 @@ const ico = {
 };
 $('bplay').innerHTML = ico.play; $('bigplay').innerHTML = ico.play; $('bback').innerHTML = ico.back; $('bfwd').innerHTML = ico.fwd;
 $('bmute').innerHTML = ico.vol; $('bpip').innerHTML = ico.pip; $('bfs').innerHTML = ico.fs;
+$('bcc').innerHTML = S('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 10H8a2 2 0 0 0 0 4h2M17 10h-2a2 2 0 0 0 0 4h2"/>');
 
 let custom = false, dragging = false, idleT, lastPl = null, vol = 1, muted = false, speedI = 2;
 const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -631,6 +696,26 @@ $('bmute').onclick = () => { muted = !muted; if (!muted && vol === 0) vol = 0.6;
 $('vol').oninput = (e) => { vol = Number(e.target.value); muted = vol === 0; applyAudio(); };
 $('bspeed').onclick = () => { speedI = (speedI + 1) % speeds.length; cur.rate(speeds[speedI]); $('bspeed').textContent = speeds[speedI] + '×'; };
 $('bpip').onclick = () => cur.pip && cur.pip();
+$('bcc').onclick = () => { updateSubtitles(); $('subtitlemodal').classList.remove('hidden'); };
+$('closesubtitle').onclick = () => $('subtitlemodal').classList.add('hidden');
+$('subtitlemodal').onclick = (e) => { if (e.target === $('subtitlemodal')) $('subtitlemodal').classList.add('hidden'); };
+function setSubtitleOn(on) { subtitleEnabled = on; try { localStorage.setItem('wp-subtitles', on ? 'on' : 'off'); } catch (e) {} updateSubtitles(); }
+$('subtitleon').onclick = () => setSubtitleOn(true);
+$('subtitleoff').onclick = () => setSubtitleOn(false);
+document.querySelectorAll('[data-subsize]').forEach((b) => b.onclick = () => { subtitleSize = b.dataset.subsize; try { localStorage.setItem('wp-subsize', subtitleSize); } catch (e) {} updateSubtitles(); });
+$('picksubtitle').onclick = () => { if (canControl() && cur && cur.el) $('subtitlefile').click(); };
+$('subtitlefile').onchange = async () => {
+  const file = $('subtitlefile').files[0]; $('subtitlefile').value = '';
+  if (!file || !canControl() || !cur || !cur.el) return;
+  if (file.size > 1024 * 1024) return toast('Subtitles must be 1 MB or smaller.');
+  const form = new FormData(); form.append('subtitle', file);
+  try {
+    const response = await fetch('/subtitle', { method: 'POST', headers: { 'X-Room-Code': code, 'X-Socket-ID': socket.id }, body: form });
+    const result = await response.json();
+    if (!response.ok) return toast(result.error || 'Subtitle upload failed.');
+    subtitleEnabled = true; updateSubtitles(); toast('Subtitles added for everyone.');
+  } catch (e) { toast('Subtitle upload failed.'); }
+};
 
 const frac = (e) => { const r = seekEl.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
 const preview = (e) => { const f = frac(e) * 100; $('sfill').style.width = f + '%'; $('sknob').style.left = f + '%'; };
@@ -679,7 +764,7 @@ async function linkToVideo(u) {
   if (v.provider === 'resolve') {
     toast('Looking for the video…');
     try {
-      const r = await fetch('/resolve?url=' + encodeURIComponent(u)); const j = await r.json();
+      const r = await fetch('/resolve?url=' + encodeURIComponent(u), { headers: { 'X-Room-Code': code, 'X-Socket-ID': socket.id } }); const j = await r.json();
       if (!r.ok) { toast(j.error || 'Could not open this link.'); return null; }
       v.provider = 'html5'; v.url = j.url; v.name = j.title;
     } catch (e) { toast('Could not open this link.'); return null; }
@@ -1021,8 +1106,8 @@ $('rcimg').onclick = () => {
 const mq = matchMedia('(max-width:860px)');
 function placeMenu() {
   const box = $('menuitems'), hdr = document.querySelector('header'), sp = hdr.querySelector('.sp'), end = $('endparty');
-  if (mq.matches) ['copy', 'brbbtn', 'recapbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => box.append($(id)));
-  else { hdr.insertBefore($('copy'), sp); ['brbbtn', 'recapbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => hdr.insertBefore($(id), end)); $('menumodal').classList.add('hidden'); }
+  if (mq.matches) ['brbbtn', 'recapbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => box.append($(id)));
+  else { ['brbbtn', 'recapbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => hdr.insertBefore($(id), end)); $('menumodal').classList.add('hidden'); }
 }
 placeMenu(); mq.addEventListener ? mq.addEventListener('change', placeMenu) : mq.addListener(placeMenu);
 $('menubtn').onclick = () => $('menumodal').classList.remove('hidden');

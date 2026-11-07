@@ -4,6 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
 const crypto = require('crypto');
+const dns = require('dns').promises;
+const net = require('net');
 const multer = require('multer');
 const { Server } = require('socket.io');
 
@@ -13,6 +15,32 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 1e5, pingInterval: 10000, pingTimeout: 8000 });
 const PORT = process.env.PORT || 3000;
 const MAX_MB = Number(process.env.MAX_MB) || 2000;
+const mbLimit = (value, fallback) => Number.isFinite(Number(value)) && Number(value) > 0 ? Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(value) * 1048576)) : fallback * 1048576;
+const MAX_TOTAL_BYTES = mbLimit(process.env.MAX_TOTAL_MB, 5000);
+const MAX_ROOM_BYTES = mbLimit(process.env.MAX_ROOM_MB, 1000);
+const EXTENSIONS = new Set(['.mp4', '.webm', '.mov', '.m4v', '.ogg', '.ogv']);
+let totalUploadBytes = 0;
+
+const trustProxy = process.env.TRUST_PROXY || 'false';
+if (trustProxy !== 'false' && trustProxy !== '0') app.set('trust proxy', trustProxy === 'true' ? 1 : /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), fullscreen=(self), picture-in-picture=(self)',
+    'Content-Security-Policy': [
+      "default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'none'",
+      "script-src 'self' 'unsafe-inline' https://www.youtube.com https://s.ytimg.com https://player.vimeo.com https://cdn.jsdelivr.net",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob: https:", "media-src 'self' blob: data: https: http:",
+      "connect-src 'self' ws: wss: https: http:",
+      "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com",
+      "worker-src 'self' blob:"
+    ].join('; '),
+  });
+  next();
+});
 
 const UP = path.join(__dirname, 'uploads');
 fs.mkdirSync(UP, { recursive: true });
@@ -22,16 +50,60 @@ for (const entry of fs.readdirSync(UP, { withFileTypes: true })) {
 }
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: UP,
-    filename: (req, f, cb) => cb(null, Date.now() + '-' + f.originalname.replace(/[^\w.\-]/g, '_')),
-  }),
+  storage: {
+    _handleFile(req, file, cb) {
+      const room = req.uploadRoom;
+      const filename = crypto.randomBytes(16).toString('hex') + path.extname(file.originalname).toLowerCase();
+      const filepath = path.join(UP, filename);
+      const output = fs.createWriteStream(filepath, { flags: 'wx' });
+      const entry = { bytes: 0, abort: () => file.stream.destroy(new Error('This room has ended.')) };
+      room.activeUploads.add(entry);
+      let finished = false;
+      const finish = (err) => {
+        if (finished) return;
+        finished = true;
+        room.activeUploads.delete(entry);
+        if (err) {
+          if (rooms[room.code] === room) { room.uploadBytes -= entry.bytes; totalUploadBytes -= entry.bytes; }
+          output.destroy();
+          fs.promises.unlink(filepath).catch((e) => { if (e.code !== 'ENOENT') console.error(e); });
+          cb(err);
+        } else {
+          room.uploads.add(filename);
+          cb(null, { destination: UP, filename, path: filepath, size: entry.bytes, originalname: file.originalname });
+        }
+      };
+      file.stream.on('data', (chunk) => {
+        if (finished) return;
+        if (rooms[room.code] !== room || room.uploadBytes + chunk.length > MAX_ROOM_BYTES || totalUploadBytes + chunk.length > MAX_TOTAL_BYTES) {
+          const err = new Error(rooms[room.code] !== room ? 'This room has ended.' : 'Upload exceeds the room or server storage limit.');
+          err.status = rooms[room.code] !== room ? 410 : 413;
+          file.stream.unpipe(output); file.stream.resume(); finish(err);
+          return;
+        }
+        entry.bytes += chunk.length; room.uploadBytes += chunk.length; totalUploadBytes += chunk.length;
+      });
+      file.stream.on('error', finish);
+      output.on('error', finish);
+      output.on('finish', () => finish());
+      if (rooms[room.code] !== room) return finish(new Error('This room has ended.'));
+      file.stream.pipe(output);
+    },
+    _removeFile(req, file, cb) {
+      const room = req.uploadRoom;
+      if (room && room.uploads.delete(file.filename)) { room.uploadBytes -= file.size; totalUploadBytes -= file.size; }
+      fs.unlink(file.path, (err) => cb(err && err.code !== 'ENOENT' ? err : null));
+    },
+  },
   limits: { fileSize: MAX_MB * 1024 * 1024 },
-  fileFilter: (req, f, cb) => cb(null, /^video\//.test(f.mimetype)),
+  fileFilter: (req, f, cb) => {
+    if (!EXTENSIONS.has(path.extname(f.originalname).toLowerCase()) || !/^video\//.test(f.mimetype)) return cb(new Error('Choose an MP4, WebM, MOV, M4V, OGG or OGV video.'));
+    cb(null, true);
+  },
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(UP)); // range requests supported, so seeking works
+app.use('/uploads', express.static(UP, { index: false, dotfiles: 'deny' })); // range requests supported; no directory listing
 
 app.post('/upload', (req, res) => {
   const code = cleanCode(req.get('x-room-code'));
@@ -39,10 +111,15 @@ app.post('/upload', (req, res) => {
   const room = rooms[code];
   if (!room || !socket || !room.members.has(socket.id) || socket.data.roomCode !== code || !allowed(socket, room))
     return res.status(403).json({ error: 'Join the room with playback permission before uploading.' });
+  const length = Number(req.get('content-length'));
+  if (Number.isFinite(length) && length > 0 && (room.uploadBytes + length > MAX_ROOM_BYTES || totalUploadBytes + length > MAX_TOTAL_BYTES))
+    return res.status(413).json({ error: 'Upload exceeds the room or server storage limit.' });
+  req.uploadRoom = room;
   upload.single('video')(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message });
+    if (err) return res.status(err.status || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 400)).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Video exceeds the maximum file size.' : err.message });
     if (!req.file) return res.status(400).json({ error: 'Please choose a video file.' });
     if (rooms[code] !== room || !room.members.has(socket.id) || !allowed(socket, room)) {
+      if (room.uploads.delete(req.file.filename)) { room.uploadBytes -= req.file.size; totalUploadBytes -= req.file.size; }
       fs.promises.unlink(req.file.path).catch(console.error);
       return res.status(410).json({ error: 'This room has ended or upload permission changed.' });
     }
@@ -51,13 +128,104 @@ app.post('/upload', (req, res) => {
   });
 });
 
-// Optional: resolve other sites (Dailymotion, Twitter/X, Facebook, etc.) with yt-dlp, if installed on the server.
-const PRIVATE = /^(localhost|127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/i;
-app.get('/resolve', (req, res) => {
+// One small, validated subtitle track per room; it follows the current HTML5 video.
+const subtitleUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024, files: 1 },
+  fileFilter: (req, f, cb) => cb(null, /\.(srt|vtt)$/i.test(f.originalname) && /^(text\/|application\/(x-subrip|octet-stream)$)/i.test(f.mimetype)) });
+function subtitleVtt(file) {
+  const source = new TextDecoder('utf-8', { fatal: true }).decode(file.buffer).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  if (!source.trim() || /\0|<[^>]*>/.test(source)) throw new Error('Subtitle must contain plain UTF-8 text.');
+  let body = source;
+  if (/\.vtt$/i.test(file.originalname)) {
+    if (!/^WEBVTT(?:[^\n]*)\n/.test(source)) throw new Error('Invalid WebVTT header.');
+    body = source.replace(/^WEBVTT[^\n]*\n/, '');
+  }
+  const stamp = '(?:\\d{2}:)?\\d{2}:\\d{2}[.,]\\d{3}';
+  const cue = new RegExp('^(' + stamp + ')[ \\t]+-->[ \\t]+(' + stamp + ')(?:[ \\t]+[^\\n]*)?$', 'gm');
+  const matches = [...body.matchAll(cue)];
+  if (!matches.length || matches.length > 10000) throw new Error('Invalid subtitle timing.');
+  const seconds = (s) => { const p = s.replace(',', '.').split(':').map(Number); return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1]; };
+  for (const m of matches) if (seconds(m[1]) >= seconds(m[2]) || seconds(m[2]) > 86400) throw new Error('Invalid subtitle timing.');
+  if (/\.srt$/i.test(file.originalname)) body = body.replace(cue, (_, a, b) => a.replace(',', '.') + ' --> ' + b.replace(',', '.'));
+  return 'WEBVTT\n\n' + body.trim() + '\n';
+}
+app.post('/subtitle', (req, res) => {
+  const code = cleanCode(req.get('x-room-code')), socket = io.sockets.sockets.get(req.get('x-socket-id'));
+  const room = rooms[code];
+  if (!room || !socket || !room.members.has(socket.id) || socket.data.roomCode !== code || !allowed(socket, room) || room.video?.provider !== 'html5')
+    return res.status(403).json({ error: 'Join a room with HTML5 playback permission to upload subtitles.' });
+  const length = Number(req.get('content-length'));
+  if (Number.isFinite(length) && length > 1024 * 1024 + 8192) return res.status(413).json({ error: 'Subtitles must be 1 MB or smaller.' });
+  subtitleUpload.single('subtitle')(req, res, async (err) => {
+    if (err) return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Subtitles must be 1 MB or smaller.' : err.message });
+    if (!req.file) return res.status(400).json({ error: 'Choose an .srt or .vtt subtitle file.' });
+    let content;
+    try { content = subtitleVtt(req.file); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const seq = room.seq, filename = crypto.randomBytes(16).toString('hex') + '.vtt', size = Buffer.byteLength(content);
+    if (room.uploadBytes - room.subtitleBytes + size > MAX_ROOM_BYTES || totalUploadBytes - room.subtitleBytes + size > MAX_TOTAL_BYTES)
+      return res.status(413).json({ error: 'Subtitles exceed the room or server storage limit.' });
+    room.uploadBytes += size; totalUploadBytes += size;
+    try { await fs.promises.writeFile(path.join(UP, filename), content, { flag: 'wx' }); }
+    catch (e) { if (rooms[code] === room) { room.uploadBytes -= size; totalUploadBytes -= size; } return res.status(500).json({ error: 'Could not save subtitles.' }); }
+    if (rooms[code] !== room || room.seq !== seq || !room.members.has(socket.id) || !allowed(socket, room)) {
+      if (rooms[code] === room) { room.uploadBytes -= size; totalUploadBytes -= size; }
+      await fs.promises.unlink(path.join(UP, filename)).catch(console.error);
+      return res.status(410).json({ error: 'The video or upload permission changed.' });
+    }
+    if (room.subtitle) fs.promises.unlink(path.join(UP, room.subtitle)).catch(console.error);
+    room.uploadBytes -= room.subtitleBytes; totalUploadBytes -= room.subtitleBytes;
+    room.subtitle = filename; room.subtitleBytes = size;
+    const info = { url: '/uploads/' + filename, name: req.file.originalname };
+    io.to(code).emit('subtitle', info);
+    res.json(info);
+  });
+});
+
+// DNS rebinding remains a residual risk: yt-dlp performs its own DNS lookups and may follow redirects.
+function blockedAddress(address) {
+  const ip = address.replace(/^\[|\]$/g, '').split('%')[0].toLowerCase();
+  if (net.isIP(ip) === 4) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 192 && b === 0) || (a === 198 && (b === 18 || b === 19));
+  }
+  if (net.isIP(ip) !== 6) return true;
+  const parts = ip.split('::');
+  if (parts.length > 2) return true;
+  const expand = (part) => part ? part.split(':').flatMap((p) => p.includes('.') ? [((Number(p.split('.')[0]) << 8) | Number(p.split('.')[1])).toString(16), ((Number(p.split('.')[2]) << 8) | Number(p.split('.')[3])).toString(16)] : [p]) : [];
+  const first = expand(parts[0]), last = parts.length === 2 ? expand(parts[1]) : [];
+  const words = parts.length === 2 ? [...first, ...Array(8 - first.length - last.length).fill('0'), ...last] : first;
+  if (words.length !== 8) return true;
+  const n = words.map((w) => parseInt(w || '0', 16));
+  if (n.some((w) => !Number.isInteger(w) || w < 0 || w > 65535)) return true;
+  if (n.slice(0, 5).every((w) => w === 0) && n[5] === 0xffff) return blockedAddress([n[6] >> 8, n[6] & 255, n[7] >> 8, n[7] & 255].join('.'));
+  return n.every((w) => w === 0) || n.slice(0, 7).every((w) => w === 0) && n[7] === 1 ||
+    (n[0] & 0xfe00) === 0xfc00 || (n[0] & 0xffc0) === 0xfe80 || (n[0] & 0xff00) === 0xff00;
+}
+let activeResolves = 0;
+app.get('/resolve', async (req, res) => {
+  const code = cleanCode(req.get('x-room-code'));
+  const socket = io.sockets.sockets.get(req.get('x-socket-id'));
+  const room = rooms[code];
+  if (!room || !socket || !room.members.has(socket.id) || socket.data.roomCode !== code || !allowed(socket, room))
+    return res.status(403).json({ error: 'Join the room with playback permission before resolving a link.' });
+  const now = Date.now(), recent = (socket.data.resolveTimes || []).filter((t) => now - t < 60000);
+  socket.data.resolveTimes = recent;
+  if (recent.length >= 6) return res.status(429).json({ error: 'Too many links. Try again in a minute.' });
+  recent.push(now);
   let u;
   try { u = new URL(String(req.query.url || '')); } catch (e) { return res.status(400).json({ error: 'Invalid link.' }); }
-  if (!/^https?:$/.test(u.protocol) || PRIVATE.test(u.hostname)) return res.status(400).json({ error: 'This link is not allowed.' });
+  if (!/^https?:$/.test(u.protocol) || u.username || u.password || (u.port && !['80', '443'].includes(u.port)))
+    return res.status(400).json({ error: 'This link is not allowed.' });
+  try {
+    const hostname = u.hostname.replace(/^\[|\]$/g, '');
+    const addresses = await dns.lookup(hostname, { all: true });
+    if (!addresses.length || addresses.some((a) => blockedAddress(a.address))) return res.status(400).json({ error: 'Private or unsafe addresses are not allowed.' });
+  } catch (e) { return res.status(400).json({ error: 'Could not verify this hostname.' }); }
+  if (activeResolves >= 2) return res.status(503).json({ error: 'Video lookup is busy. Try again shortly.' });
+  activeResolves++;
   execFile('yt-dlp', ['--no-playlist', '-f', 'best[ext=mp4]/best', '-e', '-g', u.href], { timeout: 25000 }, (err, out) => {
+    activeResolves--;
     if (err && err.code === 'ENOENT') return res.status(503).json({ error: 'This site needs yt-dlp installed on the server.' });
     const lines = String(out || '').trim().split('\n').filter(Boolean);
     if (err || lines.length < 2) return res.status(422).json({ error: 'Could not find a playable video at this link. It may be private, paid or DRM-protected.' });
@@ -67,14 +235,21 @@ app.get('/resolve', (req, res) => {
 
 // ---- rooms ----
 const rooms = {};
+const inviteHits = new Map();
+app.get('/healthz', (req, res) => res.json({ ok: true }));
 // Public invite info for a scheduled movie night (title and time only).
 app.get('/api/invite/:code', (req, res) => {
+  const now = Date.now(), ip = req.ip;
+  const hits = (inviteHits.get(ip) || []).filter((t) => now - t < 60000);
+  if (hits.length >= 30) return res.status(429).json({ error: 'Too many invite checks. Try again in a minute.' });
+  hits.push(now); inviteHits.set(ip, hits);
   const r = rooms[cleanCode(req.params.code)];
   if (!r || !r.schedule) return res.json({ exists: !!r, serverTime: Date.now() });
   res.json({ exists: true, name: r.name, title: r.schedule.title, at: r.schedule.at, locked: r.locked, count: r.members.size, serverTime: Date.now() });
 });
 setInterval(() => { for (const r of Object.values(rooms)) if (r.playing && r.video && r.members.size) r.stats.secs++; }, 1000); // time watched together
 setInterval(() => { for (const r of Object.values(rooms)) if (!r.members.size && !r.hostTimer && !keepAlive(r)) destroyRoom(r); }, 60000);
+setInterval(() => { const now = Date.now(); for (const [ip, hits] of inviteHits) if (hits.every((t) => now - t >= 60000)) inviteHits.delete(ip); }, 60000);
 const currentTime = (r) => (r.playing ? r.time + (Date.now() - r.at) / 1000 : r.time);
 const snapshot = (r) => ({ video: r.video, playing: r.playing, time: currentTime(r), seq: r.seq });
 const validId = (v) => typeof v === 'string' && /^[a-f0-9-]{32,64}$/i.test(v);
@@ -122,6 +297,7 @@ const videoLabel = (v) => v.name || { youtube: 'YouTube video', vimeo: 'Vimeo vi
 function clearBuffering(r) { r.buffering.forEach((t) => clearTimeout(t)); r.buffering.clear(); r.autoPaused = false; }
 function setVideo(r, video, play) {
   clearBuffering(r);
+  if (r.subtitle) { fs.promises.unlink(path.join(UP, r.subtitle)).catch(console.error); r.subtitle = null; r.uploadBytes -= r.subtitleBytes; totalUploadBytes -= r.subtitleBytes; r.subtitleBytes = 0; io.to(r.code).emit('subtitle', null); }
   r.video = video; r.playing = !!play && !r.brb.size; r.brbPaused = !!play && r.brb.size > 0; r.time = 0; r.at = Date.now(); r.seq++;
   r.notes = []; r.heat = {};
   io.to(r.code).emit('state', snapshot(r)); io.to(r.code).emit('waiting', []);
@@ -177,12 +353,16 @@ function destroyRoom(r, reason = 'The watch party has ended.') {
   clearHostTimer(r); clearBuffering(r); clearTimeout(r.remoteTimer); r.brb.forEach((t) => clearTimeout(t)); r.brb.clear();
   r.leaving.forEach((t) => clearTimeout(t)); r.leaving.clear();
   delete rooms[r.code];
+  if (r.subtitle) fs.promises.unlink(path.join(UP, r.subtitle)).catch(console.error);
+  for (const entry of r.activeUploads) entry.abort();
   io.to(r.code).emit('room-ended', reason);
   for (const m of r.members.values()) {
     const s = io.sockets.sockets.get(m.socketId);
     if (s) { s.data.roomCode = null; s.leave(r.code); }
   }
   r.members.clear();
+  totalUploadBytes -= r.uploadBytes;
+  r.uploadBytes = 0;
   for (const file of r.uploads) fs.promises.unlink(path.join(UP, file)).catch((err) => {
     if (err.code !== 'ENOENT') console.error('Failed to delete uploaded video:', err);
   });
@@ -212,10 +392,11 @@ io.on('connection', (socket) => {
   socket.on('join', (payload = {}) => {
     if (!payload || typeof payload !== 'object' || room) return;
     const code = cleanCode(payload.code), id = payload.clientId;
-    if (!code || !validId(id)) return socket.emit('join-error', 'Invalid room or browser ID.');
+    if (code.length < 5 || !validId(id) || typeof payload.create !== 'boolean') return socket.emit('join-error', 'Invalid room or browser ID.');
+    if (!rooms[code] && !payload.create) return socket.emit('join-error', 'Room not found. Check the code, or create a new room.');
     if (!rooms[code] && Object.keys(rooms).length >= MAX_ROOMS) return socket.emit('join-error', 'The server is busy. Please try again later.');
     const r = rooms[code] || (rooms[code] = { code, video: null, playing: false, time: 0, at: Date.now(), hostClientId: id,
-      members: new Map(), uploads: new Set(), banned: new Set(), mode: 'everyone', remoteId: null, locked: false, password: '', readyCheck: null, countdownAt: null, hostTimer: null,
+      members: new Map(), uploads: new Set(), subtitle: null, subtitleBytes: 0, uploadBytes: 0, activeUploads: new Set(), banned: new Set(), mode: 'everyone', remoteId: null, locked: false, password: '', readyCheck: null, countdownAt: null, hostTimer: null,
       name: '', maxMembers: 0, chatMuted: false, queue: [], suggestions: [], seq: 0, autoPaused: false, buffering: new Map(), bufCooldown: new Map(), leaving: new Map(), fails: [],
       brb: new Map(), brbPaused: false, vibe: 'cinema', schedule: null, remoteUntil: 0, remoteTimer: null, modeBefore: null,
       notes: [], heat: {}, recapSeq: -1, stats: { secs: 0, reacts: 0, laugh: null, any: null, ids: new Map() } });
@@ -242,6 +423,7 @@ io.on('connection', (socket) => {
     socket.emit('joined', { code });
     r.stats.ids.set(id, socket.data.name);
     socket.emit('state', snapshot(r));
+    socket.emit('subtitle', r.subtitle ? { url: '/uploads/' + r.subtitle } : null);
     socket.emit('heat', r.heat); socket.emit('notes', notesFor(r, id)); socket.emit('brb', brbNames(r));
     if (r.autoPaused) socket.emit('waiting', bufferingNames(r));
     if (!back) announce(r, `${socket.data.name} joined`);
@@ -514,3 +696,13 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => console.log(`Watch Party running at http://localhost:${PORT}`));
+let shuttingDown = false;
+function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const room of Object.values(rooms)) destroyRoom(room, 'The server is shutting down.');
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 10000).unref();
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
