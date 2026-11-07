@@ -29,6 +29,7 @@ A real-time watch-party website with synchronized playback, live chat, host cont
 | 💬 Chat & reactions | Live chat, reactions and timeline reaction markers. |
 | ☁️ Google Drive | Optional Google login to select Drive files, plus public Drive links where accessible. |
 | 🔊 Automatic audio compatibility | FFmpeg-based compatible audio for Google Drive videos with unsupported soundtracks; no manual Audio Fix button. |
+| 🌐 Multi-language audio | Choose from detected Hindi, English or other embedded audio tracks for supported Google Drive movies; each viewer chooses independently. |
 | 📺 Video sources | YouTube, Vimeo, direct video links, uploads and HLS where supported. |
 | 🔐 Private rooms | Invite codes, optional passwords, room settings and moderation. |
 | 🍿 Movie night extras | Queue, captions for HTML5 videos, BRB, countdown, glow, vibes, notes and recap. |
@@ -46,6 +47,7 @@ Open **[watchify.mixify.co.in](https://watchify.mixify.co.in/)**, enter your nic
 
 - [Node.js 20+](https://nodejs.org/) and npm
 - [FFmpeg](https://ffmpeg.org/) on PATH for automatic Google Drive audio conversion
+- **FFprobe** (typically included with FFmpeg) on PATH for detecting embedded audio languages
 - Optional: `yt-dlp` on PATH for supported third-party public video links
 
 ### Windows / PowerShell
@@ -105,6 +107,10 @@ On production, register `https://watchify.mixify.co.in/google-drive/callback` an
 
 - Google Drive audio conversion is **automatic** and the Audio Fix button is hidden.
 - FFmpeg must be installed on the server; set `FFMPEG_PATH` if it is not on PATH.
+- For Google Drive movies with **two or more detectable audio tracks**, open **More (⋯) → Audio language** to select a language. The list comes from the movie's track metadata; when language information is missing it shows a generic track label.
+- Audio-track discovery uses **FFprobe** (`ffprobe` on PATH or the `FFPROBE_PATH` environment variable). When probing is unavailable or fails, the movie keeps playing its default soundtrack and the language selector remains hidden.
+- Each viewer can choose a different soundtrack. Switching tracks restarts that viewer's compatible audio at the current movie timestamp, so a brief loading pause may occur.
+- This selector currently applies to **Google Drive compatibility streams**, not to YouTube, Vimeo or all uploaded/direct files.
 - Conversion can start separate jobs per viewer. `MAX_AUDIO_JOBS` defaults to `2` (capped at `4`).
 - Audio and video are synchronized after starting and seeking, but network buffering or low-CPU hosting can still cause short delays.
 - For most reliable playback, use H.264/AAC MP4 when possible. Larger production deployments should consider shared adaptive-bitrate transcoding rather than per-viewer FFmpeg.
@@ -126,6 +132,7 @@ DRM-protected subscription platforms (such as Netflix, Prime Video or Disney+ Ho
 2. Use build command `npm install` and start command `npm start`.
 3. Set Google OAuth values in **Render → Environment**, never in public files.
 4. Ensure FFmpeg is available in your deployment environment for automatic audio conversion.
+   Install **FFprobe** as well to enable multi-language track detection.
 5. Connect your domain and check `/healthz` (returns `{"ok":true}`).
 
 Room state is in memory; uploads are temporary. **End party** removes that room's uploads, and abandoned rooms are cleaned up after the reconnect grace period. Redeploys/restarts end active rooms. Use **one instance** and configure disk, bandwidth and upload limits (`MAX_MB`, `MAX_ROOM_MB`, `MAX_TOTAL_MB`) for your host. Configure `TRUST_PROXY` only for your actual trusted proxy setup.
