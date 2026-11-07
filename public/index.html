@@ -61,6 +61,7 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none}
 .member-card{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;min-width:0;padding:.65rem .7rem;border-radius:15px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
 .member-avatar{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,#2878ee,#a851d9);color:#fff;font-size:.8rem;font-weight:800}
 .member-identity{display:flex;flex:1 1 100px;align-items:flex-start;flex-direction:column;min-width:0;gap:2px}.member-name{max-width:100%;overflow-wrap:anywhere;font-size:.84rem;font-weight:600}.member-role{font-size:.68rem;color:#91baff}
+.member-number{display:inline-grid;place-items:center;min-width:24px;height:23px;padding:0 5px;margin-right:6px;border-radius:8px;background:rgba(255,255,255,.12);color:#c6c9ff;font-size:.72rem;font-weight:700}
 .member-manage{position:relative;flex:none}.member-manage>summary{list-style:none;cursor:pointer;padding:.42rem .75rem;border-radius:99px;background:rgba(255,255,255,.1);font-size:.78rem;font-weight:600}.member-manage>summary::-webkit-details-marker{display:none}
 .member-manage[open]{width:100%}.member-manage[open]>summary{width:max-content;margin-left:auto}.member-actions{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.65rem}.member-actions button{flex:1 1 95px;min-height:37px;padding:.45rem .6rem;font-size:.75rem}
 @media(max-width:640px){.settings-panel{max-height:90dvh;border-radius:28px 28px 0 0;padding:0;padding-bottom:env(safe-area-inset-bottom)}.settings-panel::before{content:'';display:block;width:36px;height:5px;border-radius:6px;background:rgba(255,255,255,.28);margin:9px auto 0}.settings-head{padding:.8rem 1rem}.settings-content{padding:.85rem .85rem 1.3rem}.settings-card{padding:.9rem}}
@@ -757,12 +758,14 @@ function renderUsers() {
 }
 function renderMemberTools() {
   const el = $('membertools'); el.textContent = '';
-  roomInfo.users.forEach((m) => {
+  roomInfo.users.forEach((m, index) => {
     const row = document.createElement('div'); row.className = 'member-card';
     const avatar = document.createElement('div'); avatar.className = 'member-avatar'; avatar.setAttribute('aria-hidden', 'true');
     avatar.textContent = String(m.name || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase(); row.append(avatar);
     const identity = document.createElement('div'); identity.className = 'member-identity';
-    const name = document.createElement('span'); name.className = 'member-name'; name.textContent = m.name;
+    const name = document.createElement('span'); name.className = 'member-name';
+    const number = document.createElement('span'); number.className = 'member-number'; number.textContent = String(index + 1);
+    name.append(number, document.createTextNode(m.name));
     const role = document.createElement('span'); role.className = 'member-role'; role.textContent = m.host ? 'Host' : m.remote ? 'Remote control' : 'Member';
     identity.append(name, role); row.append(identity);
     if (!m.host) {
