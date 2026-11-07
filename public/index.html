@@ -117,6 +117,8 @@ main{display:flex;flex-direction:column;gap:14px;min-height:0}
 .ib svg,.bigplay svg{fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .ib svg{width:22px;height:22px}
 .ib.txt{width:auto;padding:0 .7rem;font-weight:600;font-size:.85rem}
+.more-tools{display:contents}
+#bmore{display:none}
 .time{font-variant-numeric:tabular-nums;font-size:.85rem;padding:0 .7rem;color:#e8e8ed}
 #vol{-webkit-appearance:none;appearance:none;width:80px;height:4px;border-radius:4px;background:linear-gradient(90deg,#fff var(--v,100%),rgba(255,255,255,.25) var(--v,100%));outline:0;margin:0 .5rem;cursor:pointer;border:0;padding:0}
 #vol::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.5)}
@@ -207,7 +209,20 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
 .invite-link{font-size:.85rem;overflow-wrap:anywhere;text-align:center;color:var(--dim)}
 .stage video::cue{font-size:var(--subtitle-size,100%);background:rgba(0,0,0,.68);color:#fff}
 #bcc.active{color:#64b5ff}
-@media(max-width:640px){.ctrl .row{overflow-x:auto;scrollbar-width:none}.ctrl .row::-webkit-scrollbar{display:none}.ctrl .row .sp{min-width:2px}.qrbox{width:200px;height:200px}}
+@media(max-width:640px){
+ .ctrl{padding:.25rem .45rem .2rem;border-radius:16px}
+ .ctrl .row{gap:0;min-width:0;overflow:visible}
+ .ctrl .row .sp{min-width:0}
+ .ctrl .time{font-size:.72rem;padding:0 .12rem}
+ .ctrl .ib{width:30px;height:32px}
+ .ctrl .ib svg{width:19px;height:19px}
+ #bmore{display:grid;font-size:1.3rem;line-height:1}
+ .more-tools{display:none;position:absolute;right:5px;bottom:calc(100% + 7px);z-index:6;width:min(210px,calc(100vw - 42px));padding:8px;grid-template-columns:1fr 1fr;gap:5px;border-radius:16px;background:rgba(24,25,33,.97);border:1px solid rgba(255,255,255,.18);box-shadow:0 14px 38px rgba(0,0,0,.65)}
+ .ctrl.more-open .more-tools{display:grid}
+ .more-tools .ib,.more-tools .ib.txt{width:100%;min-height:38px;height:auto;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.08);font-size:.8rem}
+ .more-tools #bcc::after{content:' CC';font-size:.75rem;margin-left:4px}
+ .qrbox{width:200px;height:200px}
+}
 </style>
 </head>
 <body>
@@ -271,11 +286,14 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
             <span class="sp"></span>
             <button class="ib" id="bmute" aria-label="Mute"></button>
             <input type="range" id="vol" min="0" max="1" step="0.02" value="1" aria-label="Volume">
-            <button class="ib txt" id="bnote" aria-label="Add a note at this moment">Note</button>
-            <button class="ib txt" id="bglow" aria-label="Ambient glow">Glow</button>
-            <button class="ib txt hidden" id="baudio" aria-label="Compatible movie audio" title="Convert unsupported movie audio to browser-compatible stereo">Audio fix</button>
-            <button class="ib" id="bcc" aria-label="Subtitles" title="Subtitles"></button>
-            <button class="ib txt" id="bspeed" aria-label="Playback speed">1×</button>
+            <div class="more-tools" id="moretools">
+              <button class="ib txt" id="bnote" aria-label="Add a note at this moment">Note</button>
+              <button class="ib txt" id="bglow" aria-label="Ambient glow">Glow</button>
+              <button class="ib txt hidden" id="baudio" aria-label="Compatible movie audio" title="Convert unsupported movie audio to browser-compatible stereo">Audio fix</button>
+              <button class="ib" id="bcc" aria-label="Subtitles" title="Subtitles"></button>
+              <button class="ib txt" id="bspeed" aria-label="Playback speed">1×</button>
+            </div>
+            <button class="ib" id="bmore" aria-label="More playback options" aria-expanded="false" aria-controls="moretools" title="More options">⋯</button>
             <button class="ib hidden" id="bpip" aria-label="Picture in picture"></button>
             <button class="ib" id="bfs" aria-label="Fullscreen"></button>
           </div>
@@ -780,6 +798,7 @@ function applyAudio() {
 }
 function setupUI(v) {
   custom = !!cur.custom; ui.classList.toggle('hidden', !custom);
+  closePlayerMore();
   $('baudio').classList.toggle('hidden', !cur.audioFix);
   $('baudio').classList.remove('active'); $('baudio').textContent = 'Audio fix';
   $('vtitle').textContent = v.name || ''; speedI = 2; $('bspeed').textContent = '1×';
@@ -790,8 +809,18 @@ function setupUI(v) {
 $('baudio').onclick = () => { if (cur?.audioFix) cur.audioFix(!$('baudio').classList.contains('active')); };
 function wake() {
   ui.classList.remove('idle'); clearTimeout(idleT);
-  idleT = setTimeout(() => { if (cur && cur.playing() && !dragging && !ctrlEl.matches(':hover')) ui.classList.add('idle'); }, 2800);
+  idleT = setTimeout(() => { if (cur && cur.playing() && !dragging && !ctrlEl.matches(':hover') && !ctrlEl.classList.contains('more-open')) ui.classList.add('idle'); }, 2800);
 }
+function closePlayerMore() { ctrlEl.classList.remove('more-open'); $('bmore').setAttribute('aria-expanded', 'false'); }
+$('bmore').onclick = () => {
+  const open = !ctrlEl.classList.contains('more-open');
+  ctrlEl.classList.toggle('more-open', open);
+  $('bmore').setAttribute('aria-expanded', String(open));
+  wake();
+};
+$('moretools').addEventListener('click', (e) => { if (e.target.closest('button')) { closePlayerMore(); wake(); } });
+document.addEventListener('pointerdown', (e) => { if (!ctrlEl.contains(e.target)) closePlayerMore(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlayerMore(); });
 ['mousemove', 'touchstart', 'keydown'].forEach((ev) => stage.addEventListener(ev, wake, { passive: true }));
 
 const toggle = () => { if (cur && custom && canControl()) (cur.playing() ? cur.pause() : cur.play()); };
