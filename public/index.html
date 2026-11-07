@@ -109,6 +109,10 @@ main{display:flex;flex-direction:column;gap:14px;min-height:0}
 .stage>video,.stage>iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;object-fit:contain}
 .stage:fullscreen{border-radius:0;border:0}
 .stage:-webkit-full-screen{border-radius:0;border:0}
+/* iPhone Safari cannot fullscreen arbitrary elements or cross-origin embeds. */
+body.watchify-faux-fullscreen{overflow:hidden;overscroll-behavior:none}
+.stage.watchify-faux-fullscreen{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;height:100dvh!important;min-height:0!important;max-height:none!important;z-index:9999!important;border:0!important;border-radius:0!important;box-shadow:none!important}
+.stage.watchify-faux-fullscreen .yt{max-width:100%;max-height:100%}
 .stage>.yt{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);overflow:hidden;background:#000}
 .yt iframe{position:absolute;left:0;top:-64px;width:100%;height:calc(100% + 128px);border:0}
 .empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:var(--dim);padding:1.5rem}
@@ -616,7 +620,7 @@ function mountHtml5(url) {
     mute: (m) => { currentMuted = m; el.muted = m || fixEnabled; if (compatibleAudio) compatibleAudio.muted = m; }, rate: (r) => (el.playbackRate = r),
     buffered: () => (el.duration && el.buffered.length ? el.buffered.end(el.buffered.length - 1) / el.duration : 0), buffering: () => buf,
     pip: () => (document.pictureInPictureElement ? document.exitPictureInPicture() : el.requestPictureInPicture()).catch(() => {}),
-    nativeFs: () => el.webkitEnterFullscreen && el.webkitEnterFullscreen() };
+    nativeFs: () => { if (typeof el.webkitEnterFullscreen !== 'function') return false; el.webkitEnterFullscreen(); return true; } };
 }
 
 function mountYouTube(id) {
@@ -900,19 +904,53 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlaye
 
 const toggle = () => { if (cur && custom && canControl()) (cur.playing() ? cur.pause() : cur.play()); };
 const userSeek = (t) => { if (!cur || !canControl()) return; const d = cur.dur() || Infinity; t = Math.min(Math.max(0, t), d); cur.seek(t); onLocal(cur.playing(), t); };
-const canStageFs = !!(stage.requestFullscreen || stage.webkitRequestFullscreen);
 const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+const isIPhone = /iPhone|iPod/.test(navigator.userAgent);
+let fauxFs = false;
+const setFauxFs = (on) => {
+  fauxFs = on;
+  stage.classList.toggle('watchify-faux-fullscreen', on);
+  document.body.classList.toggle('watchify-faux-fullscreen', on);
+  onFs();
+};
 const goFs = () => {
-  if (fsEl()) return (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-  if (canStageFs) return (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage);
-  if (cur && cur.nativeFs) cur.nativeFs(); // iPhone: only the video element can go fullscreen
+  if (fauxFs) { setFauxFs(false); return; }
+  if (fsEl()) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) return Promise.resolve(exit.call(document)).catch(() => setFauxFs(false));
+  }
+  // iPhone Safari permits native fullscreen on HTML5 video, not on the stage.
+  // Cross-origin YouTube/Vimeo embeds need an in-page screen-filling fallback.
+  if (isIPhone) {
+    if (cur?.nativeFs) {
+      try {
+        const result = cur.nativeFs();
+        if (result === false) { setFauxFs(true); return; }
+        if (result && typeof result.catch === 'function') result.catch(() => setFauxFs(true));
+        return;
+      } catch (e) { /* Native fullscreen unavailable: use the page layout. */ }
+    }
+    setFauxFs(true);
+    return;
+  }
+  const request = stage.requestFullscreen || stage.webkitRequestFullscreen;
+  if (request) {
+    try {
+      const result = request.call(stage);
+      if (result && typeof result.catch === 'function') result.catch(() => setFauxFs(true));
+      return;
+    } catch (e) { /* Unsupported browser: use the page layout. */ }
+  }
+  setFauxFs(true);
 };
 const onFs = () => {
-  const on = !!fsEl(); $('bfs').innerHTML = on ? ico.fsx : ico.fs;
+  const on = fauxFs || !!fsEl(); $('bfs').innerHTML = on ? ico.fsx : ico.fs;
+  $('bfs').setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
   try { if (matchMedia('(pointer:coarse)').matches && screen.orientation && screen.orientation.lock) on ? screen.orientation.lock('landscape').catch(() => {}) : screen.orientation.unlock(); } catch (e) {}
 };
 document.addEventListener('fullscreenchange', onFs);
 document.addEventListener('webkitfullscreenchange', onFs);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && fauxFs) setFauxFs(false); });
 
 let clickT = null;
 let wasIdle = false;
