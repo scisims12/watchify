@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const dns = require('dns').promises;
 const net = require('net');
 const multer = require('multer');
+const { Readable } = require('stream');
 const { Server } = require('socket.io');
 
 const app = express();
@@ -14,6 +15,47 @@ const server = http.createServer(app);
 // Small message buffer + fast ping so network drops are noticed quickly and oversized payloads are refused.
 const io = new Server(server, { maxHttpBufferSize: 1e5, pingInterval: 10000, pingTimeout: 8000 });
 const PORT = process.env.PORT || 3000;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
+const googleSessions = new Map(); // In-memory; never persist OAuth credentials or send them to a browser.
+const googleStates = new Map();
+const googleReady = () => !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && /^https?:\/\//.test(GOOGLE_REDIRECT_URI));
+const sameOrigin = (req) => !req.get('origin') || [
+  `${req.protocol}://${req.get('host')}`,
+  ...(googleReady() ? [new URL(GOOGLE_REDIRECT_URI).origin] : []),
+].includes(req.get('origin'));
+const cookieValue = (req, name) => (req.headers.cookie || '').split(';').map((p) => p.trim()).find((p) => p.startsWith(name + '='))?.slice(name.length + 1) || '';
+function googleSession(req) {
+  const key = cookieValue(req, 'watchify_google');
+  const s = /^[a-f0-9]{64}$/.test(key) && googleSessions.get(key);
+  if (s && s.expires > Date.now()) return s;
+  if (s) googleSessions.delete(key);
+  return null;
+}
+function googleCookie(res, req, value, maxAge) {
+  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https' || GOOGLE_REDIRECT_URI.startsWith('https:');
+  res.cookie('watchify_google', value, { httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge });
+}
+async function googleToken(body) {
+  const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body), signal: AbortSignal.timeout(12000) });
+  const data = await response.json();
+  if (!response.ok || !data.access_token) throw new Error('Google authorization failed.');
+  return data;
+}
+async function googleAccess(auth) {
+  if (auth.expiresAt > Date.now() + 60000) return auth.accessToken;
+  if (!auth.refreshToken) throw new Error('Google login expired. Reconnect Drive.');
+  if (!auth.refreshPromise) auth.refreshPromise = googleToken({ client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET, refresh_token: auth.refreshToken, grant_type: 'refresh_token' }).then((v) => {
+    auth.accessToken = v.access_token; auth.expiresAt = Date.now() + Number(v.expires_in || 3600) * 1000;
+    return auth.accessToken;
+  }).finally(() => { auth.refreshPromise = null; });
+  return auth.refreshPromise;
+}
+async function googleApi(auth, apiPath, opts = {}) {
+  const token = await googleAccess(auth);
+  return fetch('https://www.googleapis.com/drive/v3/' + apiPath, { ...opts, headers: { ...opts.headers, Authorization: 'Bearer ' + token }, signal: opts.signal || AbortSignal.timeout(20000), redirect: 'error' });
+}
 const MAX_MB = Number(process.env.MAX_MB) || 2000;
 const mbLimit = (value, fallback) => Number.isFinite(Number(value)) && Number(value) > 0 ? Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(value) * 1048576)) : fallback * 1048576;
 const MAX_TOTAL_BYTES = mbLimit(process.env.MAX_TOTAL_MB, 5000);
@@ -104,6 +146,137 @@ const upload = multer({
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UP, { index: false, dotfiles: 'deny' })); // range requests supported; no directory listing
+
+// OAuth 2.0 authorization-code flow: server receives and holds tokens, not the frontend.
+app.use('/google-drive', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.get('/google-drive/status', (req, res) => res.json({ configured: googleReady(), connected: !!googleSession(req) }));
+app.get('/google-drive/connect', (req, res) => {
+  if (!googleReady()) return res.status(503).send('Google Drive is not configured on this server.');
+  if (googleStates.size > 1000) googleStates.clear();
+  const state = crypto.randomBytes(32).toString('hex');
+  googleStates.set(state, Date.now() + 5 * 60000);
+  res.cookie('watchify_google_state', state, { httpOnly: true, sameSite: 'lax', secure: GOOGLE_REDIRECT_URI.startsWith('https:'), path: '/google-drive', maxAge: 5 * 60000 });
+  const params = new URLSearchParams({ client_id: GOOGLE_CLIENT_ID, redirect_uri: GOOGLE_REDIRECT_URI, response_type: 'code', scope: 'https://www.googleapis.com/auth/drive.readonly', access_type: 'offline', prompt: 'consent', state });
+  res.redirect('https://accounts.google.com/o/oauth2/v2/auth?' + params);
+});
+app.get('/google-drive/callback', async (req, res) => {
+  const state = String(req.query.state || '');
+  const expiry = googleStates.get(state); googleStates.delete(state);
+  const validState = /^[a-f0-9]{64}$/.test(state) && cookieValue(req, 'watchify_google_state') === state;
+  res.clearCookie('watchify_google_state', { path: '/google-drive' });
+  if (!validState || !expiry || expiry < Date.now() || typeof req.query.code !== 'string') return res.status(400).send('Google login was cancelled or expired.');
+  try {
+    const t = await googleToken({ code: req.query.code, client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET, redirect_uri: GOOGLE_REDIRECT_URI, grant_type: 'authorization_code' });
+    const key = crypto.randomBytes(32).toString('hex');
+    googleSessions.set(key, { accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: Date.now() + Number(t.expires_in || 3600) * 1000, expires: Date.now() + 24 * 3600000 });
+    googleCookie(res, req, key, 24 * 3600000);
+    res.redirect('/?drive=connected' + (req.query.room ? '#' + encodeURIComponent(req.query.room) : ''));
+  } catch { res.status(502).send('Google login failed. Please retry.'); }
+});
+app.post('/google-drive/disconnect', (req, res) => {
+  if (!sameOrigin(req)) return res.status(403).end();
+  const key = cookieValue(req, 'watchify_google');
+  const auth = googleSessions.get(key);
+  googleSessions.delete(key); googleCookie(res, req, '', 0);
+  for (const room of Object.values(rooms)) if (auth && room.googleDriveAuth === auth) { room.googleDriveAuth = null; room.driveToken = null; }
+  res.json({ ok: true });
+});
+app.get('/google-drive/files', async (req, res) => {
+  const auth = googleSession(req);
+  if (!auth) return res.status(401).json({ error: 'Connect your Google Drive first.' });
+  try {
+    const q = "trashed = false and (mimeType contains 'video/' or name contains '.mkv')";
+    const params = new URLSearchParams({ q, fields: 'nextPageToken,files(id,name,mimeType,size)', page_size: '100', pageSize: '100', orderBy: 'modifiedTime desc' });
+    params.delete('page_size');
+    const upstream = await googleApi(auth, 'files?' + params);
+    if (!upstream.ok) return res.status(502).json({ error: 'Could not list Drive videos. Check Google permissions.' });
+    const data = await upstream.json();
+    res.json({ files: (data.files || []).filter((f) => DRIVE_ID.test(f.id)).map((f) => ({ id: f.id, name: String(f.name || '').slice(0, 180), size: f.size, type: f.mimeType })) });
+  } catch { res.status(502).json({ error: 'Could not connect to Google Drive.' }); }
+});
+
+// Public Google Drive files: stream through our origin so HTML5 video has Range support.
+// Google may still deny downloads or impose quota limits; never accept arbitrary upstream URLs.
+const DRIVE_ID = /^[A-Za-z0-9_-]{10,128}$/;
+const driveHost = (h) => h === 'drive.google.com' || h === 'drive.usercontent.google.com' || h.endsWith('.googleusercontent.com');
+let activeDriveStreams = 0;
+async function driveUpstream(id, range, signal) {
+  const attempts = [
+    `https://drive.usercontent.google.com/download?id=${encodeURIComponent(id)}&export=download&confirm=t`,
+    `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}&confirm=t`,
+  ];
+  const failures = [];
+  for (let url of attempts) {
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      const target = new URL(url);
+      if (target.protocol !== 'https:' || !driveHost(target.hostname) || target.username || target.password || target.port)
+        throw new Error('Unsafe Google Drive redirect.');
+      // DNS rebinding remains a residual risk, but HTTPS and strict Google-only hosts also limit exposure.
+      const addresses = await dns.lookup(target.hostname, { all: true });
+      if (!addresses.length || addresses.some((a) => blockedAddress(a.address))) throw new Error('Unsafe Google Drive address.');
+      const response = await fetch(target, { redirect: 'manual', signal, headers: { ...(range ? { Range: range } : {}), 'Accept-Encoding': 'identity' } });
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        if (!location) throw new Error('Invalid Google Drive redirect.');
+        await response.body?.cancel();
+        url = new URL(location, target).href;
+        continue;
+      }
+      const type = response.headers.get('content-type') || '';
+      if ([200, 206].includes(response.status) && !/text\/html|application\/json|text\/plain/i.test(type))
+        return { response, failures };
+      failures.push(`${response.status} ${type.split(';')[0].slice(0, 45)}`);
+      await response.body?.cancel();
+      break;
+    }
+  }
+  return { response: null, failures };
+}
+async function authorizedDriveUpstream(auth, id, range, signal) {
+  const upstream = await googleApi(auth, `files/${encodeURIComponent(id)}?alt=media`, { headers: range ? { Range: range } : {}, signal });
+  const type = upstream.headers.get('content-type') || '';
+  if (![200, 206].includes(upstream.status) || /text\/html|application\/json/i.test(type)) {
+    const status = `${upstream.status} ${type.split(';')[0].slice(0, 45)}`;
+    await upstream.body?.cancel();
+    return { response: null, failures: [status] };
+  }
+  return { response: upstream, failures: [] };
+}
+app.get('/drive/:id', async (req, res) => {
+  const id = req.params.id, room = rooms[cleanCode(req.query.room)], token = String(req.query.token || '');
+  if (!DRIVE_ID.test(id) || !room || !room.driveToken || room.video?.driveId !== id ||
+      !/^[a-f0-9]{64}$/.test(token) || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(room.driveToken)))
+    return res.status(403).json({ error: 'This Google Drive stream is not part of an active room.' });
+  if (activeDriveStreams >= 60) return res.status(503).json({ error: 'Too many video streams. Try again shortly.' });
+  const range = req.get('range');
+  if (range && !/^bytes=\d*-\d*$/.test(range)) return res.status(416).end();
+  activeDriveStreams++;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 120000);
+  let released = false;
+  const release = () => { if (released) return; released = true; clearTimeout(timer); activeDriveStreams--; };
+  res.on('close', () => { abort.abort(); release(); });
+  try {
+    const { response: upstream, failures } = room.googleDriveAuth
+      ? await authorizedDriveUpstream(room.googleDriveAuth, id, range, abort.signal)
+      : await driveUpstream(id, range, abort.signal);
+    if (!upstream) {
+      release();
+      return res.status(422).json({ error: 'Google Drive did not provide a direct video download. Its preview player may still work, but Watchify requires downloadable video bytes.', upstream: failures });
+    }
+    const type = upstream.headers.get('content-type') || '';
+    res.status(upstream.status);
+    res.set('Content-Type', /^video\/|^application\/octet-stream/i.test(type) ? type : 'application/octet-stream');
+    res.set('Cache-Control', 'private, no-store');
+    res.set('Accept-Ranges', 'bytes');
+    for (const header of ['content-range', 'content-length']) if (upstream.headers.has(header)) res.set(header, upstream.headers.get(header));
+    if (!upstream.body) { release(); return res.end(); }
+    Readable.fromWeb(upstream.body).on('error', () => res.destroy()).on('end', release).pipe(res);
+  } catch (e) {
+    release();
+    if (!res.headersSent && !res.destroyed) res.status(502).json({ error: 'Could not stream this Google Drive video.' });
+  }
+});
 
 app.post('/upload', (req, res) => {
   const code = cleanCode(req.get('x-room-code'));
@@ -286,23 +459,49 @@ function limited(socket, kind) {
 }
 // Validates a video request and returns the cleaned video, { error } or null.
 function cleanVideo(v, r) {
-  if (!v || typeof v !== 'object' || !['youtube', 'vimeo', 'html5'].includes(v.provider)) return null;
+  if (!v || typeof v !== 'object' || !['youtube', 'vimeo', 'html5', 'drive'].includes(v.provider)) return null;
   if (v.provider === 'youtube' && !/^[\w-]{11}$/.test(v.id || '')) return null;
   if (v.provider === 'vimeo' && !/^\d{6,15}$/.test(v.id || '')) return null;
+  if (v.provider === 'drive' && !DRIVE_ID.test(v.id || '')) return null;
   if (v.provider === 'html5' && !(typeof v.url === 'string' && (v.url.startsWith('/uploads/') || /^https?:\/\//i.test(v.url)))) return null;
   if (v.provider === 'html5' && v.url.startsWith('/uploads/') && !r.uploads.has(v.url.slice('/uploads/'.length))) return { error: 'This upload does not belong to this room.' };
   return { provider: v.provider, id: String(v.id || '').slice(0, 40), url: String(v.url || '').slice(0, 2000), name: String(v.name || '').slice(0, 120) };
 }
-const videoLabel = (v) => v.name || { youtube: 'YouTube video', vimeo: 'Vimeo video', html5: 'Video link' }[v.provider];
+const videoLabel = (v) => v.name || { youtube: 'YouTube video', vimeo: 'Vimeo video', html5: 'Video link', drive: 'Google Drive video' }[v.provider];
 function clearBuffering(r) { r.buffering.forEach((t) => clearTimeout(t)); r.buffering.clear(); r.autoPaused = false; }
 function setVideo(r, video, play) {
   clearBuffering(r);
+  r.googleDriveAuth = null;
   if (r.subtitle) { fs.promises.unlink(path.join(UP, r.subtitle)).catch(console.error); r.subtitle = null; r.uploadBytes -= r.subtitleBytes; totalUploadBytes -= r.subtitleBytes; r.subtitleBytes = 0; io.to(r.code).emit('subtitle', null); }
-  r.video = video; r.playing = !!play && !r.brb.size; r.brbPaused = !!play && r.brb.size > 0; r.time = 0; r.at = Date.now(); r.seq++;
+  r.driveToken = video.provider === 'drive' ? crypto.randomBytes(32).toString('hex') : null;
+  r.video = video.provider === 'drive' ? { provider: 'html5', driveId: video.id, name: video.name || 'Google Drive video', url: `/drive/${video.id}?room=${r.code}&token=${r.driveToken}` } : video;
+  r.playing = !!play && !r.brb.size; r.brbPaused = !!play && r.brb.size > 0; r.time = 0; r.at = Date.now(); r.seq++;
   r.notes = []; r.heat = {};
   io.to(r.code).emit('state', snapshot(r)); io.to(r.code).emit('waiting', []);
   io.to(r.code).emit('heat', {}); sendNotes(r);
 }
+app.post('/google-drive/play', express.json({ limit: '2kb' }), async (req, res) => {
+  if (!sameOrigin(req)) return res.status(403).end();
+  const auth = googleSession(req);
+  const id = req.body?.id;
+  const code = cleanCode(req.get('x-room-code'));
+  const socket = io.sockets.sockets.get(req.get('x-socket-id'));
+  const room = rooms[code];
+  if (!auth) return res.status(401).json({ error: 'Connect Google Drive first.' });
+  if (!DRIVE_ID.test(id || '') || !room || !socket || !room.members.has(socket.id) || socket.data.roomCode !== code || !allowed(socket, room))
+    return res.status(403).json({ error: 'You do not have playback permission in this room.' });
+  try {
+    const upstream = await googleApi(auth, `files/${encodeURIComponent(id)}?fields=id,name,mimeType,size,capabilities(canDownload)`);
+    if (!upstream.ok) return res.status(422).json({ error: 'Cannot access this Drive video.' });
+    const file = await upstream.json();
+    if (file.id !== id || (!String(file.mimeType || '').startsWith('video/') && !/\.mkv$/i.test(file.name || '')) || file.capabilities?.canDownload === false)
+      return res.status(422).json({ error: 'Select a downloadable video file.' });
+    setVideo(room, { provider: 'drive', id, name: String(file.name || 'Google Drive video').slice(0, 120) }, false);
+    room.googleDriveAuth = auth;
+    announce(room, `${socket.data.name} started a Google Drive video: ${room.video.name}`);
+    res.json({ ok: true });
+  } catch { res.status(502).json({ error: 'Google Drive could not open this file.' }); }
+});
 function sendQueue(r) {
   io.to(r.code).emit('queue-info', { queue: r.queue.map((q) => ({ id: q.id, label: q.label, by: q.by })) });
   const h = memberSocket(r, r.hostClientId); // pending suggestions are only shown to the host

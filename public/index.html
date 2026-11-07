@@ -114,6 +114,7 @@ main{display:flex;flex-direction:column;gap:14px;min-height:0}
 
 .src{display:flex;gap:.6rem;padding:.55rem;border-radius:999px;align-items:center}
 .src input[type=text]{background:transparent}
+@media(max-width:640px){.src{flex-wrap:wrap;border-radius:24px}.src input[type=text]{flex:1 1 100%}.src button{flex:1 1 auto;padding:.55rem .65rem}}
 #prog{height:4px;border-radius:4px;background:var(--glass2);overflow:hidden;display:none}
 #prog i{display:block;height:100%;width:0;background:var(--blue)}
 aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
@@ -272,6 +273,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
       <input id="url" type="text" placeholder="Paste a YouTube, Vimeo or any video link" aria-label="Video link">
       <button id="load">Play</button>
       <button class="ghost" id="pick">Upload</button>
+      <button class="ghost" id="drivepick">Drive</button>
       <button class="ghost" id="queuebtn">Queue</button>
       <input id="file" type="file" accept="video/*" class="hidden">
     </div>
@@ -289,6 +291,13 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
 </section>
 
 <div id="toast" class="glass hidden"></div>
+<div id="drivemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Google Drive videos"><div class="panel glass">
+ <div class="panel-row"><h2>Google Drive</h2><button class="ghost" id="closedrive">Close</button></div>
+ <p class="hint" id="drivestatus">Connect your Google account to choose a video from your Drive.</p>
+ <div class="panel-row"><button id="driveconnect">Connect Google</button><button class="ghost hidden" id="drivedisconnect">Disconnect</button></div>
+ <div id="drivefiles" style="display:grid;gap:.5rem;max-height:45vh;overflow-y:auto"></div>
+ <p class="hint">Only you connect your Drive. Videos are streamed to the room without sharing your Google password or access token. MKV codecs may still require conversion.</p>
+</div></div>
 <div id="invitemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Invite friends"><div class="panel glass">
  <div class="panel-row"><h2>Invite friends</h2><button id="closeinvite" class="ghost">Close</button></div>
  <div class="qrbox" id="inviteqr" aria-label="QR code for room invitation"></div>
@@ -414,7 +423,7 @@ function mountHtml5(url) {
     el.src = url;
     ready = new Promise((r) => { el.addEventListener('loadedmetadata', r, { once: true }); el.addEventListener('error', r, { once: true }); });
   }
-  el.onerror = () => toast('This video cannot be played. For your own files, use MP4 (H.264). Phone videos in HEVC often fail.');
+  el.onerror = () => toast(url.startsWith('/drive/') ? 'Google Drive could not stream this video. Allow Anyone with the link and downloads, or use Upload.' : 'This video cannot be played. For your own files, use MP4 (H.264). Phone videos in HEVC often fail.');
   el.onplay = el.onpause = el.onseeked = () => onLocal(!el.paused, el.currentTime);
   return { custom: true, ready, time: () => el.currentTime, playing: () => !el.paused, seek: (t) => (el.currentTime = t),
     play: () => el.play().catch(autoplayMsg), pause: () => el.pause(), destroy() { hls && hls.destroy(); el.remove(); },
@@ -751,6 +760,14 @@ applyAudio();
 // ---- link handling ----
 function parseLink(u) {
   let m;
+  try {
+    const link = new URL(u);
+    if (link.protocol === 'https:' && ['drive.google.com', 'drive.usercontent.google.com'].includes(link.hostname)) {
+      const id = link.pathname.match(/^\/file\/d\/([A-Za-z0-9_-]{10,128})(?:\/|$)/)?.[1] ||
+        (['/open', '/uc', '/download'].includes(link.pathname) ? link.searchParams.get('id') : null);
+      if (id && /^[A-Za-z0-9_-]{10,128}$/.test(id)) return { provider: 'drive', id, name: 'Google Drive video' };
+    }
+  } catch (e) {}
   if ((m = u.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/))) return { provider: 'youtube', id: m[1] };
   if (/^[\w-]{11}$/.test(u)) return { provider: 'youtube', id: u };
   if ((m = u.match(/vimeo\.com\/(?:.*\/)?(\d{6,})/))) return { provider: 'vimeo', id: m[1] };
@@ -778,6 +795,54 @@ $('load').onclick = async () => {
   socket.emit('video', v); $('url').value = '';
 };
 $('url').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('load').click(); });
+
+// Google Drive picker. The server holds OAuth tokens; this UI sees only filenames/IDs.
+const driveModal = $('drivemodal');
+$('closedrive').onclick = () => driveModal.classList.add('hidden');
+driveModal.addEventListener('click', (e) => { if (e.target === driveModal) driveModal.classList.add('hidden'); });
+$('driveconnect').onclick = () => { try { sessionStorage.setItem('watchify-google-return', location.hash); } catch {} location.href = '/google-drive/connect'; };
+$('drivedisconnect').onclick = async () => {
+  await fetch('/google-drive/disconnect', { method: 'POST' });
+  $('drivefiles').replaceChildren(); driveStatus('Drive disconnected.');
+  await loadDrivePicker();
+};
+function driveStatus(text) { $('drivestatus').textContent = text; }
+async function loadDrivePicker() {
+  try {
+    const status = await (await fetch('/google-drive/status')).json();
+    $('driveconnect').classList.toggle('hidden', status.connected || !status.configured);
+    $('drivedisconnect').classList.toggle('hidden', !status.connected);
+    if (!status.configured) return driveStatus('Google Drive login is not configured on this server.');
+    if (!status.connected) return driveStatus('Connect your Google account to choose a video.');
+    driveStatus('Loading your videos…');
+    const response = await fetch('/google-drive/files'); const data = await response.json();
+    if (!response.ok) return driveStatus(data.error || 'Unable to list Drive videos.');
+    const list = $('drivefiles'); list.replaceChildren();
+    driveStatus(`${data.files.length} videos found. Choose one to start a synchronized Watch Party.`);
+    for (const file of data.files) {
+      const button = document.createElement('button'); button.className = 'ghost';
+      button.style.cssText = 'border-radius:16px;text-align:left;overflow-wrap:anywhere';
+      button.textContent = file.name + (Number(file.size) ? ` · ${(Number(file.size) / 1073741824).toFixed(2)} GB` : '');
+      button.onclick = async () => {
+        if (!canControl()) return toast('You do not have the remote.');
+        button.disabled = true; driveStatus('Preparing your video…');
+        try {
+          const r = await fetch('/google-drive/play', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Room-Code': code, 'X-Socket-ID': socket.id }, body: JSON.stringify({ id: file.id }) });
+          const result = await r.json();
+          if (!r.ok) throw Error(result.error || 'Could not start video.');
+          driveModal.classList.add('hidden'); toast('Google Drive video added to the party.');
+        } catch (err) { driveStatus(err.message); } finally { button.disabled = false; }
+      };
+      list.append(button);
+    }
+  } catch { driveStatus('Google Drive is currently unavailable.'); }
+}
+$('drivepick').onclick = () => { if (!canControl()) return toast('You do not have the remote.'); driveModal.classList.remove('hidden'); loadDrivePicker(); };
+if (new URLSearchParams(location.search).has('drive')) {
+  let roomHash = location.hash;
+  try { roomHash ||= sessionStorage.getItem('watchify-google-return') || ''; sessionStorage.removeItem('watchify-google-return'); } catch {}
+  history.replaceState(null, '', location.pathname + roomHash);
+}
 
 // ---- upload ----
 $('pick').onclick = () => { if (canControl()) $('file').click(); };
