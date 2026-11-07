@@ -397,7 +397,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
  </div></div>
 <div id="queuemodal" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Video queue"><div class="panel glass">
  <div class="panel-row"><h2>Up next</h2><button class="ghost" id="closequeue" aria-label="Close queue">Close</button></div>
- <input id="qurl" type="text" placeholder="Paste a video link" aria-label="Video link to add"><div class="panel-row"><button id="qadd">Add to queue</button></div>
+ <input id="qurl" type="text" placeholder="Paste a video link" aria-label="Video link to add"><div class="panel-row"><button id="qadd">Add to queue</button><button id="qdrive" class="ghost">☁️ Add from Drive</button></div>
  <div id="qsuggest" class="hidden"><h3>Suggestions</h3><div id="qsuggestlist"></div></div>
  <h3>Queue</h3><div id="qlist"></div>
 </div></div>
@@ -1019,6 +1019,7 @@ $('url').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('load').c
 
 // Google Drive picker. The server holds OAuth tokens; this UI sees only filenames/IDs.
 const driveModal = $('drivemodal');
+let drivePickMode = 'play';
 $('closedrive').onclick = () => driveModal.classList.add('hidden');
 driveModal.addEventListener('click', (e) => { if (e.target === driveModal) driveModal.classList.add('hidden'); });
 $('driveconnect').onclick = () => { try { sessionStorage.setItem('watchify-google-return', location.hash); } catch {} location.href = '/google-drive/connect'; };
@@ -1039,26 +1040,30 @@ async function loadDrivePicker() {
     const response = await fetch('/google-drive/files'); const data = await response.json();
     if (!response.ok) return driveStatus(data.error || 'Unable to list Drive videos.');
     const list = $('drivefiles'); list.replaceChildren();
-    driveStatus(`${data.files.length} videos found. Choose one to start a synchronized Watch Party.`);
+    driveStatus(`${data.files.length} videos found. Choose one to ${drivePickMode === 'queue' ? 'add to Up next' : 'start watching'}.`);
     for (const file of data.files) {
       const button = document.createElement('button'); button.className = 'ghost';
       button.style.cssText = 'border-radius:16px;text-align:left;overflow-wrap:anywhere';
       button.textContent = file.name + (Number(file.size) ? ` · ${(Number(file.size) / 1073741824).toFixed(2)} GB` : '');
       button.onclick = async () => {
         if (!canControl()) return toast('You do not have the remote.');
-        button.disabled = true; driveStatus('Preparing your video…');
+        button.disabled = true; driveStatus(drivePickMode === 'queue' ? 'Adding to queue…' : 'Preparing your video…');
         try {
-          const r = await fetch('/google-drive/play', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Room-Code': code, 'X-Socket-ID': socket.id }, body: JSON.stringify({ id: file.id }) });
+          const queueDrive = drivePickMode === 'queue';
+          const r = await fetch(queueDrive ? '/google-drive/queue' : '/google-drive/play', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Room-Code': code, 'X-Socket-ID': socket.id }, body: JSON.stringify({ id: file.id }) });
           const result = await r.json();
           if (!r.ok) throw Error(result.error || 'Could not start video.');
-          driveModal.classList.add('hidden'); toast('Google Drive video added to the party.');
+          driveModal.classList.add('hidden');
+          if (queueDrive) { $('queuemodal').classList.remove('hidden'); toast('Google Drive video added to Up next.'); }
+          else toast('Google Drive video added to the party.');
+          drivePickMode = 'play';
         } catch (err) { driveStatus(err.message); } finally { button.disabled = false; }
       };
       list.append(button);
     }
   } catch { driveStatus('Google Drive is currently unavailable.'); }
 }
-$('drivepick').onclick = () => { if (!canControl()) return toast('You do not have the remote.'); driveModal.classList.remove('hidden'); loadDrivePicker(); };
+$('drivepick').onclick = () => { if (!canControl()) return toast('You do not have the remote.'); drivePickMode = 'play'; driveModal.classList.remove('hidden'); loadDrivePicker(); };
 if (new URLSearchParams(location.search).has('drive')) {
   let roomHash = location.hash;
   try { roomHash ||= sessionStorage.getItem('watchify-google-return') || ''; sessionStorage.removeItem('watchify-google-return'); } catch {}
@@ -1167,6 +1172,7 @@ function qRow(item, actions) {
 }
 function renderQueue() {
   const hostNow = isHost(), n = qInfo.queue.length, p = hostNow ? qSug.length : 0, btn = $('queuebtn');
+  $('qdrive').classList.toggle('hidden', !hostNow);
   btn.textContent = n ? `Queue · ${n}` : 'Queue';
   if (p) { const pill = document.createElement('span'); pill.className = 'pill'; pill.textContent = p + ' new'; btn.append(pill); }
   $('qadd').textContent = hostNow ? 'Add to queue' : 'Suggest to host';
@@ -1183,6 +1189,7 @@ $('queuebtn').onclick = () => { renderQueue(); $('queuemodal').classList.remove(
 $('closequeue').onclick = () => $('queuemodal').classList.add('hidden');
 $('queuemodal').onclick = (e) => { if (e.target === $('queuemodal')) $('queuemodal').classList.add('hidden'); };
 $('qadd').onclick = async () => { const u = $('qurl').value.trim(); if (!u) return; const v = await linkToVideo(u); if (!v) return; socket.emit('queue-suggest', v); $('qurl').value = ''; };
+$('qdrive').onclick = () => { if (!isHost()) return toast('Only the host can queue a private Drive video.'); drivePickMode = 'queue'; $('queuemodal').classList.add('hidden'); driveModal.classList.remove('hidden'); loadDrivePicker(); };
 $('qurl').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('qadd').click(); });
 socket.on('kicked', () => $('queuemodal').classList.add('hidden'));
 
