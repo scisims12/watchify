@@ -290,7 +290,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
     <button class="ghost" id="invitebtn">Invite</button>
     <span class="sp"></span>
     <button class="ghost" id="brbbtn">BRB</button>
-    <button class="ghost" id="recapbtn">Recap</button>
+    <button class="ghost hidden" id="recapbtn" aria-hidden="true" tabindex="-1">Recap</button>
     <button class="ghost hidden" id="requestremote">Request remote</button>
     <button class="ghost hidden" id="settings" aria-label="Room settings">Room settings</button>
     <button class="ghost hidden" id="readylaunch">Start with countdown</button>
@@ -1396,8 +1396,8 @@ $('rcimg').onclick = () => {
 const mq = matchMedia('(max-width:860px)');
 function placeMenu() {
   const box = $('menuitems'), hdr = document.querySelector('header'), sp = hdr.querySelector('.sp'), end = $('endparty');
-  if (mq.matches) ['brbbtn', 'recapbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => box.append($(id)));
-  else { ['brbbtn', 'recapbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => hdr.insertBefore($(id), end)); $('menumodal').classList.add('hidden'); }
+  if (mq.matches) ['brbbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => box.append($(id)));
+  else { ['brbbtn', 'requestremote', 'settings', 'readylaunch', 'resync'].forEach((id) => hdr.insertBefore($(id), end)); $('menumodal').classList.add('hidden'); }
 }
 placeMenu(); mq.addEventListener ? mq.addEventListener('change', placeMenu) : mq.addListener(placeMenu);
 $('menubtn').onclick = () => $('menumodal').classList.remove('hidden');
