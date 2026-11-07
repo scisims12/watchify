@@ -119,6 +119,8 @@ main{display:flex;flex-direction:column;gap:14px;min-height:0}
 .ib.txt{width:auto;padding:0 .7rem;font-weight:600;font-size:.85rem}
 .more-tools{display:contents}
 #bmore{display:none}
+.audio-language{display:flex;flex-direction:column;gap:3px;min-width:120px;color:#e8e8ed;font-size:.72rem}
+.audio-language select{max-width:185px;padding:5px 9px;border-radius:10px;font-size:.78rem;background:#252735;border:1px solid rgba(255,255,255,.2);color:#fff}
 .time{font-variant-numeric:tabular-nums;font-size:.85rem;padding:0 .7rem;color:#e8e8ed}
 #vol{-webkit-appearance:none;appearance:none;width:80px;height:4px;border-radius:4px;background:linear-gradient(90deg,#fff var(--v,100%),rgba(255,255,255,.25) var(--v,100%));outline:0;margin:0 .5rem;cursor:pointer;border:0;padding:0}
 #vol::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.5)}
@@ -220,6 +222,8 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
  .more-tools{display:none;position:absolute;right:5px;bottom:calc(100% + 7px);z-index:6;width:min(210px,calc(100vw - 42px));padding:8px;grid-template-columns:1fr 1fr;gap:5px;border-radius:16px;background:rgba(24,25,33,.97);border:1px solid rgba(255,255,255,.18);box-shadow:0 14px 38px rgba(0,0,0,.65)}
  .ctrl.more-open .more-tools{display:grid}
  .more-tools .ib,.more-tools .ib.txt{width:100%;min-height:38px;height:auto;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.08);font-size:.8rem}
+ .more-tools .audio-language{grid-column:1/-1;width:100%;padding:6px 4px}
+ .more-tools .audio-language select{width:100%;max-width:none}
  .more-tools #bcc::after{content:' CC';font-size:.75rem;margin-left:4px}
  .qrbox{width:200px;height:200px}
 }
@@ -292,6 +296,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
               <button class="ib txt hidden" id="baudio" aria-label="Compatible movie audio" title="Convert unsupported movie audio to browser-compatible stereo">Audio fix</button>
               <button class="ib" id="bcc" aria-label="Subtitles" title="Subtitles"></button>
               <button class="ib txt" id="bspeed" aria-label="Playback speed">1×</button>
+              <label class="audio-language hidden" id="audiolanguage">Audio language<select id="audiotrack" aria-label="Movie audio language"></select></label>
             </div>
             <button class="ib" id="bmore" aria-label="More playback options" aria-expanded="false" aria-controls="moretools" title="More options">⋯</button>
             <button class="ib hidden" id="bpip" aria-label="Picture in picture"></button>
@@ -448,6 +453,7 @@ function mountHtml5(url) {
   el.addEventListener('ended', onEnded);
   let hls, bad = false;
   let compatibleAudio = null, audioOffset = 0, audioSeq = 0, currentVolume = 1, currentMuted = false, currentRate = 1;
+  let selectedTrack = 0, destroyed = false;
   let fixEnabled = false, holdingVideo = false, wantsPlayback = false, localInternal = false;
   const canFix = url.startsWith('/drive/');
   const internalChange = (fn) => {
@@ -464,7 +470,7 @@ function mountHtml5(url) {
     audioOffset = offset;
     const audio = new Audio(); compatibleAudio = audio;
     audio.preload = 'auto'; audio.volume = currentVolume; audio.muted = currentMuted; audio.playbackRate = currentRate;
-    const stream = url.replace(/^\/drive\//, '/drive-audio/') + '&start=' + encodeURIComponent(offset.toFixed(3));
+    const stream = url.replace(/^\/drive\//, '/drive-audio/') + '&start=' + encodeURIComponent(offset.toFixed(3)) + '&track=' + selectedTrack;
     audio.src = stream;
     audio.onwaiting = () => {
       if (!fixEnabled || sequence !== audioSeq) return;
@@ -551,12 +557,28 @@ function mountHtml5(url) {
   // the internal control element for state updates, but it is not shown.
   if (canFix) ready.then(() => {
     setAudioFix(true, false);
+    // Discover language tracks without delaying playback. Each viewer chooses locally.
+    fetch(url.replace(/^\/drive\//, '/drive-audio-tracks/'), { cache: 'no-store' })
+      .then((response) => { if (!response.ok) throw Error('Track discovery unavailable'); return response.json(); })
+      .then(({ tracks }) => {
+        if (destroyed || !Array.isArray(tracks) || tracks.length < 2) return;
+        const picker = $('audiotrack'); picker.replaceChildren();
+        tracks.forEach((track, index) => {
+          const option = document.createElement('option'); option.value = String(index);
+          let lang = '';
+          try { if (track.language && track.language !== 'und') lang = new Intl.DisplayNames(['en'], { type: 'language' }).of(track.language) || ''; } catch (e) {}
+          option.textContent = (lang || track.title || `Track ${index + 1}`) + (track.codec ? ` (${track.codec.toUpperCase()})` : '');
+          picker.append(option);
+        });
+        picker.value = String(selectedTrack); $('audiolanguage').classList.remove('hidden');
+      }).catch(() => {}); // FFprobe is optional; keep default soundtrack if unavailable.
   });
   el.onerror = () => toast(url.startsWith('/drive/') ? 'Google Drive could not stream this video. Allow Anyone with the link and downloads, or use Upload.' : 'This video cannot be played. For your own files, use MP4 (H.264). Phone videos in HEVC often fail.');
   el.onplay = el.onpause = () => { if (!localInternal && !holdingVideo) onLocal(!el.paused, el.currentTime); };
   return { custom: true, ready, time: () => el.currentTime, playing: () => !el.paused, seek: (t) => (el.currentTime = t),
-    play: () => el.play().catch(autoplayMsg), pause: () => el.pause(), destroy() { clearInterval(syncTimer); stopAudio(); hls && hls.destroy(); el.remove(); },
+    play: () => el.play().catch(autoplayMsg), pause: () => el.pause(), destroy() { destroyed = true; clearInterval(syncTimer); stopAudio(); hls && hls.destroy(); el.remove(); },
     audioFix: canFix ? setAudioFix : null,
+    selectAudioTrack: canFix ? (track) => { if (!Number.isSafeInteger(track) || track < 0 || track > 31 || track === selectedTrack) return; selectedTrack = track; restartAudio(); } : null,
     el, dur: () => el.duration || 0, vol: (v) => { currentVolume = v; el.volume = v; if (compatibleAudio) compatibleAudio.volume = v; },
     mute: (m) => { currentMuted = m; el.muted = m || fixEnabled; if (compatibleAudio) compatibleAudio.muted = m; }, rate: (r) => (el.playbackRate = r),
     buffered: () => (el.duration && el.buffered.length ? el.buffered.end(el.buffered.length - 1) / el.duration : 0), buffering: () => buf,
@@ -799,6 +821,7 @@ function applyAudio() {
 function setupUI(v) {
   custom = !!cur.custom; ui.classList.toggle('hidden', !custom);
   closePlayerMore();
+  $('audiolanguage').classList.add('hidden'); $('audiotrack').replaceChildren();
   $('baudio').classList.toggle('hidden', !cur.audioFix);
   $('baudio').classList.remove('active'); $('baudio').textContent = 'Audio fix';
   $('vtitle').textContent = v.name || ''; speedI = 2; $('bspeed').textContent = '1×';
@@ -849,6 +872,7 @@ $('bfwd').onclick = () => userSeek(cur.time() + 10);
 $('bmute').onclick = () => { muted = !muted; if (!muted && vol === 0) vol = 0.6; applyAudio(); };
 $('vol').oninput = (e) => { vol = Number(e.target.value); muted = vol === 0; applyAudio(); };
 $('bspeed').onclick = () => { speedI = (speedI + 1) % speeds.length; cur.rate(speeds[speedI]); $('bspeed').textContent = speeds[speedI] + '×'; };
+$('audiotrack').onchange = (e) => { if (cur?.selectAudioTrack) { cur.selectAudioTrack(Number(e.target.value)); toast('Switching audio language…'); } };
 $('bpip').onclick = () => cur.pip && cur.pip();
 $('bcc').onclick = () => { updateSubtitles(); $('subtitlemodal').classList.remove('hidden'); };
 $('closesubtitle').onclick = () => $('subtitlemodal').classList.add('hidden');
