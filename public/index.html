@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+#baudio { display: none !important; } /* Automatic Drive audio compatibility runs in the background. */
 :root{--v1:#1c2a4a;--v2:#2a1640;--bg:#000;--glass:rgba(34,34,38,.62);--glass2:rgba(255,255,255,.07);--line:rgba(255,255,255,.12);--text:#f5f5f7;--dim:#98989f;--blue:#0a84ff;--green:#30d158}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -102,6 +103,7 @@ main{display:flex;flex-direction:column;gap:14px;min-height:0}
 .row{display:flex;align-items:center;gap:.15rem}
 .row .sp{flex:1}
 .ib{background:none;color:#fff;padding:0;border-radius:12px;display:grid;place-items:center;width:38px;height:36px}
+.ib.active{background:var(--blue);color:#fff}
 .ib:hover{background:rgba(255,255,255,.15)}
 .ib svg,.bigplay svg{fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .ib svg{width:22px;height:22px}
@@ -259,6 +261,7 @@ aside{border-radius:26px;display:flex;flex-direction:column;min-height:0;overflo
             <input type="range" id="vol" min="0" max="1" step="0.02" value="1" aria-label="Volume">
             <button class="ib txt" id="bnote" aria-label="Add a note at this moment">Note</button>
             <button class="ib txt" id="bglow" aria-label="Ambient glow">Glow</button>
+            <button class="ib txt hidden" id="baudio" aria-label="Compatible movie audio" title="Convert unsupported movie audio to browser-compatible stereo">Audio fix</button>
             <button class="ib" id="bcc" aria-label="Subtitles" title="Subtitles"></button>
             <button class="ib txt" id="bspeed" aria-label="Playback speed">1×</button>
             <button class="ib hidden" id="bpip" aria-label="Picture in picture"></button>
@@ -414,6 +417,97 @@ function mountHtml5(url) {
   el.addEventListener('canplay', () => (buf = false));
   el.addEventListener('ended', onEnded);
   let hls, bad = false;
+  let compatibleAudio = null, audioOffset = 0, audioSeq = 0, currentVolume = 1, currentMuted = false, currentRate = 1;
+  let fixEnabled = false, holdingVideo = false, wantsPlayback = false, localInternal = false;
+  const canFix = url.startsWith('/drive/');
+  const internalChange = (fn) => {
+    localInternal = true;
+    try { fn(); } finally { setTimeout(() => { localInternal = false; }, 0); }
+  };
+  function stopAudio() { audioSeq++; if (compatibleAudio) { compatibleAudio.pause(); compatibleAudio.removeAttribute('src'); compatibleAudio.load(); compatibleAudio.remove(); compatibleAudio = null; } }
+  function restartAudio() {
+    if (!fixEnabled) return;
+    wantsPlayback = holdingVideo || !el.paused;
+    if (wantsPlayback) { holdingVideo = true; internalChange(() => el.pause()); }
+    stopAudio();
+    const sequence = audioSeq, offset = Math.max(0, el.currentTime);
+    audioOffset = offset;
+    const audio = new Audio(); compatibleAudio = audio;
+    audio.preload = 'auto'; audio.volume = currentVolume; audio.muted = currentMuted; audio.playbackRate = currentRate;
+    const stream = url.replace(/^\/drive\//, '/drive-audio/') + '&start=' + encodeURIComponent(offset.toFixed(3));
+    audio.src = stream;
+    audio.onwaiting = () => {
+      if (!fixEnabled || sequence !== audioSeq) return;
+      $('baudio').textContent = 'Audio loading…';
+      // An audio-only network stall must not silently make the picture run
+      // ahead: hold the local picture until the soundtrack resumes.
+      if (!el.paused && !holdingVideo) {
+        wantsPlayback = true;
+        holdingVideo = true;
+        internalChange(() => el.pause());
+      }
+    };
+    audio.onplaying = () => {
+      if (!fixEnabled || sequence !== audioSeq) return;
+      $('baudio').textContent = 'Audio on';
+      if (holdingVideo && wantsPlayback) {
+        holdingVideo = false;
+        internalChange(() => { el.play().catch(autoplayMsg); });
+      }
+    };
+    audio.onerror = () => {
+      if (fixEnabled && sequence === audioSeq) {
+        $('baudio').textContent = 'Audio failed';
+        toast('Compatible audio failed. Check the server PowerShell for an FFmpeg error.');
+      }
+    };
+    if (wantsPlayback) audio.play().catch(() => toast('Tap Play to enable compatible audio.'));
+  }
+  function setAudioFix(enabled, remember = true) {
+    fixEnabled = !!enabled && canFix;
+    if (remember && canFix) { try { localStorage.setItem('wp-drive-compatible-audio', fixEnabled ? '1' : '0'); } catch (e) {} }
+    el.muted = currentMuted || fixEnabled;
+    $('baudio').classList.toggle('active', fixEnabled);
+    $('baudio').textContent = fixEnabled ? 'Audio loading…' : 'Audio fix';
+    if (fixEnabled) restartAudio(); else {
+      const resume = holdingVideo && wantsPlayback;
+      stopAudio(); holdingVideo = false; wantsPlayback = false;
+      if (resume) internalChange(() => el.play().catch(autoplayMsg));
+    }
+  }
+  el.addEventListener('play', () => {
+    if (!fixEnabled || !compatibleAudio) return;
+    wantsPlayback = true;
+    if (holdingVideo) internalChange(() => el.pause());
+    compatibleAudio.play().catch(() => {});
+  });
+  el.addEventListener('pause', () => { if (!holdingVideo) { wantsPlayback = false; compatibleAudio?.pause(); } });
+  el.addEventListener('seeked', () => {
+    if (localInternal) return;
+    if (fixEnabled) restartAudio();
+    onLocal(wantsPlayback || !el.paused, el.currentTime);
+  });
+  el.addEventListener('ratechange', () => { currentRate = el.playbackRate; if (compatibleAudio) compatibleAudio.playbackRate = currentRate; });
+  // MP3 starts at timestamp zero *relative to the requested offset*. Keep its
+  // media clock aligned with the original video's absolute timestamp.
+  const syncTimer = setInterval(() => {
+    if (!fixEnabled || holdingVideo || el.paused || !compatibleAudio || compatibleAudio.readyState < 2) return;
+    const audio = compatibleAudio;
+    const desired = el.currentTime - audioOffset;
+    const drift = desired - audio.currentTime;
+    if (!Number.isFinite(drift) || desired < 0) return;
+    if (Math.abs(drift) > 1 && audio.seekable.length) {
+      const first = audio.seekable.start(0), last = audio.seekable.end(audio.seekable.length - 1);
+      if (desired >= first && desired <= last) {
+        try { audio.currentTime = desired; audio.playbackRate = currentRate; return; } catch (e) {}
+      }
+    }
+    // Avoid the previous large 35% playback-rate jumps every 400ms. Use a
+    // deadband to prevent audible speed oscillation on minor clock jitter.
+    const factor = drift > 0.45 ? 1.06 : drift < -0.45 ? 0.96 : 1;
+    const targetRate = Math.max(0.5, Math.min(2, currentRate * factor));
+    if (Math.abs(audio.playbackRate - targetRate) > 0.005) audio.playbackRate = targetRate;
+  }, 800);
   if (/\.m3u8(\?|#|$)/i.test(url) && !el.canPlayType('application/vnd.apple.mpegurl')) {
     var ready = loadScript('https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js').then(() => {
       hls = new Hls(); hls.loadSource(url); hls.attachMedia(el);
@@ -423,11 +517,18 @@ function mountHtml5(url) {
     el.src = url;
     ready = new Promise((r) => { el.addEventListener('loadedmetadata', r, { once: true }); el.addEventListener('error', r, { once: true }); });
   }
+  // Always enable Google Drive compatibility automatically. The player keeps
+  // the internal control element for state updates, but it is not shown.
+  if (canFix) ready.then(() => {
+    setAudioFix(true, false);
+  });
   el.onerror = () => toast(url.startsWith('/drive/') ? 'Google Drive could not stream this video. Allow Anyone with the link and downloads, or use Upload.' : 'This video cannot be played. For your own files, use MP4 (H.264). Phone videos in HEVC often fail.');
-  el.onplay = el.onpause = el.onseeked = () => onLocal(!el.paused, el.currentTime);
+  el.onplay = el.onpause = () => { if (!localInternal && !holdingVideo) onLocal(!el.paused, el.currentTime); };
   return { custom: true, ready, time: () => el.currentTime, playing: () => !el.paused, seek: (t) => (el.currentTime = t),
-    play: () => el.play().catch(autoplayMsg), pause: () => el.pause(), destroy() { hls && hls.destroy(); el.remove(); },
-    el, dur: () => el.duration || 0, vol: (v) => (el.volume = v), mute: (m) => (el.muted = m), rate: (r) => (el.playbackRate = r),
+    play: () => el.play().catch(autoplayMsg), pause: () => el.pause(), destroy() { clearInterval(syncTimer); stopAudio(); hls && hls.destroy(); el.remove(); },
+    audioFix: canFix ? setAudioFix : null,
+    el, dur: () => el.duration || 0, vol: (v) => { currentVolume = v; el.volume = v; if (compatibleAudio) compatibleAudio.volume = v; },
+    mute: (m) => { currentMuted = m; el.muted = m || fixEnabled; if (compatibleAudio) compatibleAudio.muted = m; }, rate: (r) => (el.playbackRate = r),
     buffered: () => (el.duration && el.buffered.length ? el.buffered.end(el.buffered.length - 1) / el.duration : 0), buffering: () => buf,
     pip: () => (document.pictureInPictureElement ? document.exitPictureInPicture() : el.requestPictureInPicture()).catch(() => {}),
     nativeFs: () => el.webkitEnterFullscreen && el.webkitEnterFullscreen() };
@@ -667,11 +768,14 @@ function applyAudio() {
 }
 function setupUI(v) {
   custom = !!cur.custom; ui.classList.toggle('hidden', !custom);
+  $('baudio').classList.toggle('hidden', !cur.audioFix);
+  $('baudio').classList.remove('active'); $('baudio').textContent = 'Audio fix';
   $('vtitle').textContent = v.name || ''; speedI = 2; $('bspeed').textContent = '1×';
   $('bpip').classList.toggle('hidden', !(cur.pip && document.pictureInPictureEnabled));
   $('bfs').classList.toggle('hidden', !canStageFs && !cur.nativeFs);
   lastPl = null; wake();
 }
+$('baudio').onclick = () => { if (cur?.audioFix) cur.audioFix(!$('baudio').classList.contains('active')); };
 function wake() {
   ui.classList.remove('idle'); clearTimeout(idleT);
   idleT = setTimeout(() => { if (cur && cur.playing() && !dragging && !ctrlEl.matches(':hover')) ui.classList.add('idle'); }, 2800);

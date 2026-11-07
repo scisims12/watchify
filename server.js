@@ -1,8 +1,11 @@
+// Local-only credentials live in .env (gitignored). Production environment
+// variables supplied by Render take precedence and are never overwritten.
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const crypto = require('crypto');
 const dns = require('dns').promises;
 const net = require('net');
@@ -252,7 +255,11 @@ app.get('/drive/:id', async (req, res) => {
   if (range && !/^bytes=\d*-\d*$/.test(range)) return res.status(416).end();
   activeDriveStreams++;
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 120000);
+  // The previous hard 120-second cutoff interrupted even healthy multi-GB
+  // streams. Time out only when no bytes arrive for a prolonged period.
+  let timer;
+  const refreshTimeout = () => { clearTimeout(timer); timer = setTimeout(() => abort.abort(), 60000); };
+  refreshTimeout();
   let released = false;
   const release = () => { if (released) return; released = true; clearTimeout(timer); activeDriveStreams--; };
   res.on('close', () => { abort.abort(); release(); });
@@ -271,11 +278,67 @@ app.get('/drive/:id', async (req, res) => {
     res.set('Accept-Ranges', 'bytes');
     for (const header of ['content-range', 'content-length']) if (upstream.headers.has(header)) res.set(header, upstream.headers.get(header));
     if (!upstream.body) { release(); return res.end(); }
-    Readable.fromWeb(upstream.body).on('error', () => res.destroy()).on('end', release).pipe(res);
+    Readable.fromWeb(upstream.body).on('data', refreshTimeout)
+      .on('error', () => res.destroy()).on('end', release).pipe(res);
   } catch (e) {
     release();
     if (!res.headersSent && !res.destroyed) res.status(502).json({ error: 'Could not stream this Google Drive video.' });
   }
+});
+
+// Optional compatible soundtrack. Progressive MP3 is deliberately used here:
+// HTMLAudioElement can decode it while the response is still streaming, unlike
+// an unbounded fragmented MP4 whose initialization data can appear successful
+// even when no playable audio packets arrive.
+const AUDIO_JOBS_LIMIT = Math.max(1, Math.min(4, Number(process.env.MAX_AUDIO_JOBS) || 2));
+const audioJobs = new Set();
+app.get('/drive-audio/:id', (req, res) => {
+  const id = req.params.id, room = rooms[cleanCode(req.query.room)], token = String(req.query.token || '');
+  if (!DRIVE_ID.test(id) || !room || !room.driveToken || room.video?.driveId !== id ||
+    !/^[a-f0-9]{64}$/.test(token) || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(room.driveToken)))
+    return res.status(403).json({ error: 'Audio stream is not part of an active room.' });
+  const offset = Number(req.query.start || 0);
+  if (!Number.isFinite(offset) || offset < 0 || offset > 86400) return res.status(400).end();
+  if (audioJobs.size >= AUDIO_JOBS_LIMIT) return res.status(503).json({ error: 'Audio conversion is busy. Try again.' });
+  const port = server.address()?.port;
+  if (!port) return res.status(503).end();
+  const input = `http://127.0.0.1:${port}/drive/${encodeURIComponent(id)}?room=${room.code}&token=${room.driveToken}`;
+  const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin',
+    '-analyzeduration', '15M', '-probesize', '15M', '-ss', offset.toFixed(3), '-i', input,
+    '-map', '0:a:0', '-vn', '-sn', '-dn', '-c:a', 'libmp3lame', '-b:a', '160k',
+    '-ac', '2', '-ar', '44100', '-f', 'mp3', 'pipe:1'];
+  const proc = spawn(process.env.FFMPEG_PATH || 'ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  audioJobs.add(proc);
+  (room.audioJobs ||= new Set()).add(proc);
+  let done = false, outputBytes = 0, log = '', errorReported = false;
+  const finish = () => { if (done) return; done = true; audioJobs.delete(proc); room.audioJobs?.delete(proc); if (!proc.killed) proc.kill('SIGTERM'); };
+  res.on('close', finish);
+  const safeLog = (s) => String(s)
+    .replace(/https?:\/\/[^\s\]]+/gi, '[media source]')
+    .replace(/token=[^\s&]+/gi, 'token=[redacted]')
+    .replace(/[a-f0-9]{64}/gi, '[redacted]')
+    .slice(0, 1200);
+  proc.once('error', (e) => {
+    errorReported = true;
+    console.error('[Audio compatibility] FFmpeg could not start:', e.code || 'unknown');
+    if (!res.headersSent) res.status(503).json({ error: 'FFmpeg is unavailable on this server.' });
+    finish();
+  });
+  proc.stdout.on('data', (chunk) => { outputBytes += chunk.length; });
+  proc.stdout.on('error', finish);
+  proc.stderr.on('data', (chunk) => { log = (log + chunk.toString()).slice(-4000); });
+  proc.once('close', (code) => {
+    if (!errorReported && code !== 0 && code !== null) {
+      console.error(`[Audio compatibility] FFmpeg exit ${code}, audio bytes ${outputBytes}: ${safeLog(log)}`);
+    } else if (!errorReported && code === 0 && outputBytes < 4096) {
+      console.error(`[Audio compatibility] No playable audio produced (${outputBytes} bytes): ${safeLog(log)}`);
+    }
+    if (!res.headersSent) res.status(502).end();
+    else if (!res.writableEnded) res.end();
+    finish();
+  });
+  res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+  proc.stdout.pipe(res);
 });
 
 app.post('/upload', (req, res) => {
@@ -471,6 +534,7 @@ const videoLabel = (v) => v.name || { youtube: 'YouTube video', vimeo: 'Vimeo vi
 function clearBuffering(r) { r.buffering.forEach((t) => clearTimeout(t)); r.buffering.clear(); r.autoPaused = false; }
 function setVideo(r, video, play) {
   clearBuffering(r);
+  for (const job of r.audioJobs || []) job.kill('SIGTERM');
   r.googleDriveAuth = null;
   if (r.subtitle) { fs.promises.unlink(path.join(UP, r.subtitle)).catch(console.error); r.subtitle = null; r.uploadBytes -= r.subtitleBytes; totalUploadBytes -= r.subtitleBytes; r.subtitleBytes = 0; io.to(r.code).emit('subtitle', null); }
   r.driveToken = video.provider === 'drive' ? crypto.randomBytes(32).toString('hex') : null;
@@ -549,6 +613,7 @@ function host(socket, r) { if (socket.data.clientId !== r.hostClientId) { deny(s
 function clearHostTimer(r) { if (r.hostTimer) clearTimeout(r.hostTimer); r.hostTimer = null; }
 function destroyRoom(r, reason = 'The watch party has ended.') {
   if (rooms[r.code] !== r) return;
+  for (const job of r.audioJobs || []) job.kill('SIGTERM');
   clearHostTimer(r); clearBuffering(r); clearTimeout(r.remoteTimer); r.brb.forEach((t) => clearTimeout(t)); r.brb.clear();
   r.leaving.forEach((t) => clearTimeout(t)); r.leaving.clear();
   delete rooms[r.code];
